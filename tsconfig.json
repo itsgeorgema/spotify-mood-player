@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es2020", // Or higher, depending on your Vercel/browser support
+    "lib": ["dom", "es2020", "esnext.asynciterable"], // Include DOM for React, ES2020 features
+    "module": "esnext", // Or "ESNext" for modern ESM
+    "moduleResolution": "node",
+    "jsx": "react-jsx", //  Use react-jsx
+    "esModuleInterop": true, // For better compatibility with CommonJS modules
+    "strict": true, // Enable all strict type-checking options
+    "noImplicitAny": true,
+    "skipLibCheck": true, //  Improves build time with libraries
+    "sourceMap": true,  //  Useful for debugging in development and production
+    "resolveJsonModule": true, // Allows importing JSON files as modules
+    "isolatedModules": true, // Required for some bundlers like Vite.
+    "noEmit": true // Important: Do not emit js files, bundler will handle this
+  },
+  "include": ["src"], //  Tell the compiler where your code is
+  "exclude": ["node_modules"]
+}
