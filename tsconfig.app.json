@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false, // Don't allow importing regular JS into TS
+    "noEmit": true, //  Vite handles the final output
+    "jsx": "react-jsx",  //  Use the new JSX transform
+    "module": "esnext",
+    "moduleResolution": "node",
+    "target": "es2020"
+  },
+  "include": ["./src"], // Ensure only your app code is included
+  "exclude": [
+      "node_modules",
+      "**/*.test.ts",  // Exclude test files
+      "**/*.test.tsx"
+  ]
+}
