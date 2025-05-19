@@ -1,10 +1,20 @@
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import './index.css';
-import App from './App'; // Note:  Import now refers to the compiled JS version
+import React from 'react'; 
+import ReactDOM from 'react-dom/client'; 
 
-createRoot(document.getElementById('root')!).render( //The '!'  is a non-null assertion operator
-  <StrictMode>
+import App from './App';
+import './index.css'; //base styles
+import './App.css';   //specific styles for app
+
+const rootElement = document.getElementById('root');
+
+if (!rootElement) {
+  throw new Error("Failed to find the root element. Ensure there's an element with id='root' in your index.html.");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+
+root.render(
+  <React.StrictMode> 
     <App />
-  </StrictMode>,
+  </React.StrictMode>
 );
