@@ -1,42 +1,152 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #121212; /* Dark background */
+  color: #ffffff;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start; /* Align to top for scrolling */
+  min-height: 100vh;
   text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.container {
+  background-color: #1e1e1e; /* Slightly lighter dark shade for container */
+  padding: 20px 40px;
+  border-radius: 12px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  margin-top: 30px;
+  margin-bottom: 30px;
+  width: 90%;
+  max-width: 600px;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+header {
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #333;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+header h1 {
+  color: #1DB954; /* Spotify Green */
+  margin-bottom: 20px;
 }
 
-.card {
-  padding: 2em;
+.spotify-button {
+  background-color: #1DB954; /* Spotify Green */
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 50px; /* Pill shape */
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.3s ease, transform 0.1s ease;
+  text-decoration: none; /* For anchor tags if used */
+  display: inline-block;
 }
 
-.read-the-docs {
-  color: #888;
+.spotify-button:hover {
+  background-color: #1ed760;
+}
+.spotify-button:active {
+  transform: scale(0.98);
+}
+
+.spotify-button.logout {
+  background-color: #535353;
+}
+.spotify-button.logout:hover {
+  background-color: #6a6a6a;
+}
+
+
+main h2 {
+  margin-bottom: 20px;
+  color: #eee;
+}
+
+.mood-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.mood-button {
+  padding: 10px 20px;
+  font-size: 1em;
+  border-radius: 25px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.mood-button:hover {
+  opacity: 0.8;
+}
+.mood-button.selected {
+  border-color: #1DB954;
+  color: #1DB954;
+  font-weight: bold;
+}
+
+/* Mood specific colors - examples */
+.mood-happy { background-color: #f1c40f; color: #333; }
+.mood-sad   { background-color: #3498db; color: white; }
+.mood-energetic { background-color: #e74c3c; color: white; }
+.mood-calm  { background-color: #9b59b6; color: white; }
+
+.mood-happy.selected { border-color: #f39c12; background-color: #f39c12; color: white; }
+.mood-sad.selected { border-color: #2980b9; background-color: #2980b9; }
+.mood-energetic.selected { border-color: #c0392b; background-color: #c0392b; }
+.mood-calm.selected { border-color: #8e44ad; background-color: #8e44ad; }
+
+
+.device-selector {
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+.device-selector h3 {
+  margin-bottom: 10px;
+  color: #ccc;
+}
+.device-selector select {
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #444;
+  background-color: #333;
+  color: white;
+  font-size: 1em;
+  min-width: 200px;
+}
+
+
+.message {
+  margin-top: 25px;
+  padding: 10px;
+  border-radius: 5px;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #eee;
+  min-height: 20px;
+}
+.warning-message {
+    color: #f1c40f;
+    background-color: rgba(241, 196, 15, 0.1);
+    padding: 10px;
+    border-radius: 5px;
+    margin-top: 15px;
+}
+
+footer {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+  font-size: 0.9em;
+  color: #aaa;
 }
