@@ -4,3 +4,4 @@ Spotipy
 TextBlob
 Pandas
 Gunicorn
+dotenv
