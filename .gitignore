@@ -23,5 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 
+#virtual env
+.venv
 #environment variables
 *.env*
+
+.cache
+__pycache__
