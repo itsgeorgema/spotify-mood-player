@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs", // Or "esnext" if your Vercel supports it
+    "target": "es2020", // Or your Vercel target
+    "outDir": "dist", //  Where the compiled Node.js code should go
+    "noEmit": false, //  Set to false, if you want to generate js
+  },
+  "include": ["./scripts"], // Example:  Put your Node.js scripts in a "scripts" folder
+  "exclude": ["node_modules"]
+}
