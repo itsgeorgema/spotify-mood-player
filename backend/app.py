@@ -9,16 +9,8 @@ import spotipy
 # Attempt to load dotenv and check its status
 try:
     from dotenv import load_dotenv
-    print("--- python-dotenv module found. Attempting to load .env file... ---")
     if os.path.exists('.env'):
-        print("--- .env file found in backend directory. ---")
         load_success = load_dotenv()
-        if load_success:
-            print("--- .env file loaded successfully. ---")
-        else:
-            print("--- WARNING: load_dotenv() called but reported no variables loaded. Check .env content or permissions. ---")
-    else:
-        print("--- WARNING: .env file not found in backend directory. Relying on system environment variables for production. ---")
 except ImportError:
     print("--- WARNING: python-dotenv module not found. pip install python-dotenv if you are using a .env file for local dev. ---")
     print("--- Relying on system environment variables. ---")
@@ -50,7 +42,6 @@ if IS_PRODUCTION:
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
     )
-    print(f"--- Flask SERVER_NAME (Production): {app.config['SERVER_NAME']} ---")
 else: # Local development
     app.config['SERVER_NAME'] = f"127.0.0.1:{backend_port_local_dev}"
     app.config.update(
@@ -61,15 +52,6 @@ else: # Local development
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
     )
-    print(f"--- Flask SERVER_NAME (Development): {app.config['SERVER_NAME']} ---")
-
-print(f"--- Flask Session Cookie SAMESITE: {app.config['SESSION_COOKIE_SAMESITE']} ---")
-print(f"--- Flask Session Cookie SECURE: {app.config['SESSION_COOKIE_SECURE']} ---")
-print(f"--- Flask Session Cookie HTTPONLY: {app.config['SESSION_COOKIE_HTTPONLY']} ---")
-print(f"--- Flask Session Cookie PATH: {app.config['SESSION_COOKIE_PATH']} ---")
-if 'SESSION_COOKIE_DOMAIN' in app.config: # Print domain only if explicitly set
-    print(f"--- Flask Session Cookie DOMAIN: {app.config.get('SESSION_COOKIE_DOMAIN')} ---")
-sys.stdout.flush()
 
 # CORS CONFIG
 frontend_url_from_env = os.getenv("FRONTEND_URL")
@@ -84,7 +66,6 @@ CORS(app,
          "methods": ["GET", "POST", "OPTIONS"]
      }},
      supports_credentials=True)
-
 
 # --- Helper to get Spotipy client from session ---
 # (get_spotify_client_from_session function remains the same as in the previous "Explicit Cookie Domain" version)
@@ -126,8 +107,6 @@ def login():
     try:
         auth_manager = spotify_service.create_spotify_oauth()
         auth_url = auth_manager.get_authorize_url()
-        print(f"--- Generated Spotify auth URL with client_id: {os.getenv('SPOTIPY_CLIENT_ID')} ---")
-        print(f"--- Redirect URI set to: {os.getenv('SPOTIPY_REDIRECT_URI')} ---")
         sys.stdout.flush()
         return redirect(auth_url)
     except Exception as e:
@@ -138,14 +117,12 @@ def login():
 
 @app.route('/api/callback', methods=['GET'])
 def spotify_callback():
-    print("--- /api/callback route hit ---")
     sys.stdout.flush()
     try:
         auth_manager = spotify_service.create_spotify_oauth()
         code = request.args.get('code')
         
         if not code:
-            print("--- /api/callback: No code provided ---")
             return redirect(f"{frontend_url_from_env}/?error=no_code")
 
         # Exchange authorization code for tokens
@@ -155,11 +132,6 @@ def spotify_callback():
         session.permanent = True  # Make the session permanent
         session['spotify_token_info'] = token_info
         session.modified = True
-        
-        print("--- Token stored in session successfully ---")
-        print(f"--- Token info: {token_info} ---")
-        print(f"--- Full session content: {dict(session)} ---")
-        sys.stdout.flush()
         
         # Set explicit cookie parameters
         response = redirect(f"{frontend_url_from_env}/callback?login_success=true")
@@ -173,11 +145,6 @@ def spotify_callback():
 
 @app.route('/api/check_auth', methods=['GET'])
 def check_auth_status():
-    print("--- /api/check_auth route hit ---")
-    print(f"--- /api/check_auth: Request cookies: {request.cookies} ---")
-    print(f"--- /api/check_auth: Current session content: {dict(session)} ---")
-    sys.stdout.flush()
-    
     token_info = session.get('spotify_token_info')
     if not token_info:
         print("--- No token_info in session ---")
@@ -193,17 +160,13 @@ def check_auth_status():
 
 @app.route('/api/logout', methods=['POST'])
 def spotify_logout():
-    print("--- /api/logout route hit ---")
     sys.stdout.flush()
     session.pop('spotify_token_info', None)
     session.modified = True 
-    print("--- User logged out, token removed from session. ---")
-    sys.stdout.flush()
     return jsonify({"message": "Logged out successfully"}), 200
 
 @app.route('/api/mood-tracks', methods=['GET'])
 def get_mood_tracks_route():
-    print("--- /api/mood-tracks route hit ---")
     sys.stdout.flush()
     mood = request.args.get('mood')
     if not mood:
