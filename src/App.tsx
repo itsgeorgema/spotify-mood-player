@@ -11,12 +11,12 @@ import './App.css';
 const getApiEndpoint = (pathStartingWithApi: string) => {
   if (import.meta.env.DEV) {
     // In development, use relative paths for the Vite proxy.
-    // pathStartingWithApi should be like '/api/check_auth'
     return pathStartingWithApi;
-  } else {
+  } else if (import.meta.env.VITE_BACKEND_API_URL.substring(import.meta.env.VITE_BACKEND_API_URL.length-4)=='/api') {
     // In production, use the full backend URL from environment variables.
-    // VITE_BACKEND_API_URL should be like https://your-render-app-name.onrender.com
-    // pathStartingWithApi will be appended, e.g., https://your-render-app-name.onrender.com/api/check_auth
+        return `${import.meta.env.VITE_BACKEND_API_URL}${pathStartingWithApi.substring(4)}`;
+  }
+  else{
     return `${import.meta.env.VITE_BACKEND_API_URL}${pathStartingWithApi}`;
   }
 };
