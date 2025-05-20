@@ -73,9 +73,6 @@ sys.stdout.flush()
 
 # CORS CONFIG
 frontend_url_from_env = os.getenv("FRONTEND_URL")
-
-if not frontend_url_from_env:
-    frontend_url_from_env = "http://127.0.0.1:5173"
 allowed_origins = [frontend_url_from_env]
 
 CORS(app, 
