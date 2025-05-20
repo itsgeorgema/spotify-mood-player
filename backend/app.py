@@ -1,9 +1,7 @@
-# backend/app.py
-print("--- Starting backend/app.py ---") # Canary print
-
 import os
 import sys # For flushing output
 import traceback
+from datetime import timedelta  
 from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 import spotipy
@@ -27,20 +25,10 @@ except ImportError:
 sys.stdout.flush()
 
 # Assuming spotify_service.py is in the same backend directory
-try:
-    import spotify_service
-    print("--- spotify_service.py imported successfully. ---")
-except ImportError as e:
-    print(f"--- CRITICAL ERROR: Failed to import spotify_service.py: {e} ---")
-    print("--- Please ensure spotify_service.py is in the backend directory and has no syntax errors. ---")
-    sys.stdout.flush()
-    exit() 
-sys.stdout.flush()
+import spotify_service
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback_dev_secret_key_MUST_BE_SET_IN_ENV")
-if app.secret_key == "fallback_dev_secret_key_MUST_BE_SET_IN_ENV":
-    print("--- CRITICAL WARNING: Using a fallback FLASK_SECRET_KEY. This is insecure. Set a proper FLASK_SECRET_KEY in your environment. ---")
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "default_key")
 
 # --- Environment-Specific Configuration ---
 IS_PRODUCTION = os.getenv('FLASK_ENV') == 'production'
@@ -48,31 +36,30 @@ backend_port_local_dev = os.getenv('PORT', '5001') # Default for local, Render s
 
 if IS_PRODUCTION:
     # For Render, RENDER_EXTERNAL_HOSTNAME is automatically set and includes the domain.
-    # We don't need to include the port here for SERVER_NAME as Render handles port mapping.
+    # render will handle port mapping so dont need to set port
     app.config['SERVER_NAME'] = os.getenv('RENDER_EXTERNAL_HOSTNAME')
     if not app.config['SERVER_NAME']:
-        print("--- WARNING: RENDER_EXTERNAL_HOSTNAME not found. Cookie domain might be incorrect. Consider setting a BACKEND_HOSTNAME env var. ---")
         # Fallback for safety, though RENDER_EXTERNAL_HOSTNAME should exist on Render
-        app.config['SERVER_NAME'] = "spotify-mood-player-api.onrender.com" # Replace if your Render service name is different
+        app.config['SERVER_NAME'] = "https://spotify-mood-player-api.onrender.com"
     
     app.config.update(
-        SESSION_COOKIE_SECURE=True,    # Cookies only sent over HTTPS
-        SESSION_COOKIE_SAMESITE="Lax", # "Lax" is a good default. If issues persist, "None" could be tried (requires Secure=True).
+        SESSION_COOKIE_SECURE=True, 
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_PATH='/'
-        # SESSION_COOKIE_DOMAIN is usually best left for Flask to derive from SERVER_NAME in this cross-origin setup,
-        # or set it to your backend domain if SERVER_NAME isn't working as expected.
-        # e.g., SESSION_COOKIE_DOMAIN = app.config['SERVER_NAME']
+        SESSION_COOKIE_SAMESITE='Lax',
+        SESSION_COOKIE_PATH='/',
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
+        SESSION_REFRESH_EACH_REQUEST=True
     )
     print(f"--- Flask SERVER_NAME (Production): {app.config['SERVER_NAME']} ---")
 else: # Local development
     app.config['SERVER_NAME'] = f"127.0.0.1:{backend_port_local_dev}"
     app.config.update(
-        SESSION_COOKIE_SECURE=False,
-        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=False,  # Set to True in production
         SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
         SESSION_COOKIE_PATH='/',
-        SESSION_COOKIE_DOMAIN="127.0.0.1" # Explicit for 127.0.0.1 local dev
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
+        SESSION_REFRESH_EACH_REQUEST=True
     )
     print(f"--- Flask SERVER_NAME (Development): {app.config['SERVER_NAME']} ---")
 
@@ -84,20 +71,22 @@ if 'SESSION_COOKIE_DOMAIN' in app.config: # Print domain only if explicitly set
     print(f"--- Flask Session Cookie DOMAIN: {app.config.get('SESSION_COOKIE_DOMAIN')} ---")
 sys.stdout.flush()
 
-# --- CORS Configuration ---
+# CORS CONFIG
 frontend_url_from_env = os.getenv("FRONTEND_URL")
+
 if not frontend_url_from_env:
-    frontend_url_from_env = "http://localhost:5173" # Default for local if not set
-    print(f"--- WARNING: FRONTEND_URL not set in environment, defaulting to {frontend_url_from_env} for CORS. ---")
-print(f"--- CORS: Allowing frontend URL: {frontend_url_from_env} ---")
+    frontend_url_from_env = "http://127.0.0.1:5173"
 allowed_origins = [frontend_url_from_env]
-# If your Vercel frontend URL is different from what FRONTEND_URL is set to in Render, add it.
-# Example: if FRONTEND_URL in Render is set to your Vercel custom domain, this might not be needed.
-# if IS_PRODUCTION and frontend_url_from_env != "https://spotify-mood-player.vercel.app": # Your actual Vercel URL
-#     allowed_origins.append("https://spotify-mood-player.vercel.app")
 
-
-CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+CORS(app, 
+     resources={r"/api/*": {
+         "origins": [frontend_url_from_env],
+         "supports_credentials": True,
+         "expose_headers": ["Set-Cookie", "Authorization"],
+         "allow_headers": ["Content-Type", "Authorization"],
+         "methods": ["GET", "POST", "OPTIONS"]
+     }},
+     supports_credentials=True)
 
 
 # --- Helper to get Spotipy client from session ---
@@ -129,32 +118,26 @@ def get_spotify_client_from_session():
             sys.stdout.flush()
             session.pop('spotify_token_info', None) 
             return None
+    if not token_info:
+        return None
     return spotipy.Spotify(auth=token_info['access_token'])
 
 # --- API Routes ---
-# (All API routes: /api/login, /api/callback, /api/check_auth, /api/logout, 
-#  /api/mood-tracks, /api/play, /api/queue, /api/devices, /api/health 
-#  remain the same as in the previous "Explicit Cookie Domain" version)
 @app.route('/api/login', methods=['GET'])
-def spotify_login():
+def login():
     print("--- /api/login route hit ---")
-    sys.stdout.flush()
     try:
         auth_manager = spotify_service.create_spotify_oauth()
         auth_url = auth_manager.get_authorize_url()
-        print(f"--- Redirecting to Spotify auth URL: {auth_url[:70]}... ---") 
+        print(f"--- Generated Spotify auth URL with client_id: {os.getenv('SPOTIPY_CLIENT_ID')} ---")
+        print(f"--- Redirect URI set to: {os.getenv('SPOTIPY_REDIRECT_URI')} ---")
         sys.stdout.flush()
         return redirect(auth_url)
-    except ValueError as ve:
-        print(f"--- CONFIGURATION ERROR in /api/login: {ve} ---")
-        traceback.print_exc()
-        sys.stdout.flush()
-        return jsonify({"error": "Server configuration error for Spotify login.", "details": str(ve)}), 500
     except Exception as e:
-        print(f"--- UNEXPECTED ERROR in /api/login: {e} ---")
+        print(f"--- Error in /api/login: {str(e)} ---")
         traceback.print_exc()
         sys.stdout.flush()
-        return jsonify({"error": "An unexpected error occurred during login.", "details": str(e)}), 500
+        return jsonify({"error": "Failed to initialize Spotify login"}), 500
 
 @app.route('/api/callback', methods=['GET'])
 def spotify_callback():
@@ -162,50 +145,54 @@ def spotify_callback():
     sys.stdout.flush()
     try:
         auth_manager = spotify_service.create_spotify_oauth()
-    except ValueError as ve: 
-        print(f"--- CONFIGURATION ERROR in /api/callback when creating auth_manager: {ve} ---")
-        traceback.print_exc()
-        sys.stdout.flush()
-        return jsonify({"error": "Server configuration error during Spotify callback.", "details": str(ve)}), 500
+        code = request.args.get('code')
         
-    code = request.args.get('code')
-    if not code:
-        print("--- /api/callback: Authorization code not found. ---")
-        sys.stdout.flush()
-        return jsonify({"error": "Authorization code not found in callback."}), 400
+        if not code:
+            print("--- /api/callback: No code provided ---")
+            return redirect(f"{frontend_url_from_env}/?error=no_code")
 
-    try:
+        # Exchange authorization code for tokens
         token_info = auth_manager.get_access_token(code)
-        session['spotify_token_info'] = token_info 
-        session.modified = True 
-        print("--- Successfully obtained Spotify token from callback. Session 'spotify_token_info' SET and marked as modified. ---")
-        print(f"--- /api/callback: Session content immediately after set: {dict(session)} ---") 
+        
+        # Store tokens in session with explicit session configuration
+        session.permanent = True  # Make the session permanent
+        session['spotify_token_info'] = token_info
+        session.modified = True
+        
+        print("--- Token stored in session successfully ---")
+        print(f"--- Token info: {token_info} ---")
+        print(f"--- Full session content: {dict(session)} ---")
         sys.stdout.flush()
-        # Use the frontend_url_from_env for the redirect
-        print(f"--- Redirecting to frontend: {frontend_url_from_env}/?login_success=true ---")
-        sys.stdout.flush()
-        return redirect(f"{frontend_url_from_env}/?login_success=true")
+        
+        # Set explicit cookie parameters
+        response = redirect(f"{frontend_url_from_env}/callback?login_success=true")
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+
     except Exception as e:
-        print(f"--- Error getting token from Spotify in /api/callback: {e} ---")
+        print(f"--- Error in callback: {str(e)} ---")
         traceback.print_exc()
-        sys.stdout.flush()
-        return jsonify({"error": "Failed to get token from Spotify.", "details": str(e)}), 500
+        return redirect(f"{frontend_url_from_env}/?error=auth_failed")
 
 @app.route('/api/check_auth', methods=['GET'])
 def check_auth_status():
     print("--- /api/check_auth route hit ---")
+    print(f"--- /api/check_auth: Request cookies: {request.cookies} ---")
     print(f"--- /api/check_auth: Current session content: {dict(session)} ---")
     sys.stdout.flush()
-    sp_client = get_spotify_client_from_session() 
-    if sp_client:
-        print("--- /api/check_auth: User is authenticated. ---")
-        sys.stdout.flush()
-        return jsonify({"isAuthenticated": True}), 200
-    else:
-        print("--- /api/check_auth: User is NOT authenticated (get_spotify_client_from_session returned None). ---")
-        sys.stdout.flush()
+    
+    token_info = session.get('spotify_token_info')
+    if not token_info:
+        print("--- No token_info in session ---")
         return jsonify({"isAuthenticated": False}), 200
 
+    sp_client = get_spotify_client_from_session()
+    if sp_client:
+        print("--- User is authenticated with valid token ---")
+        return jsonify({"isAuthenticated": True}), 200
+    else:
+        print("--- Token validation failed ---")
+        return jsonify({"isAuthenticated": False}), 200
 
 @app.route('/api/logout', methods=['POST'])
 def spotify_logout():
@@ -336,14 +323,41 @@ def health_check():
     return jsonify({"status": "healthy", "message": "Backend is running!"}), 200
 
 if __name__ == '__main__':
-    print("--- Starting Flask development server... ---")
-    print(f"--- FLASK_ENV: {os.getenv('FLASK_ENV')} ---")
     # For local development, app.run will use the port from SERVER_NAME or default
     if not IS_PRODUCTION:
         local_run_port_str = app.config['SERVER_NAME'].split(':')[-1]
         local_run_port = int(local_run_port_str) if local_run_port_str.isdigit() else 5001
-        print(f"--- Attempting to run local dev server on host 0.0.0.0, port {local_run_port} ---")
-        sys.stdout.flush()
         app.run(debug=True, host='0.0.0.0', port=local_run_port)
     # In production, Gunicorn uses the PORT environment variable set by Render.
     # The SERVER_NAME config is for Flask's URL generation and cookie domain setting.
+
+@app.route('/api/auth', methods=['POST'])
+def process_auth():
+    print("--- /api/auth route hit ---")
+    data = request.get_json()
+    code = data.get('code')
+    
+    if not code:
+        print("--- No authorization code provided ---")
+        return jsonify({"error": "No authorization code provided"}), 400
+
+    try:
+        auth_manager = spotify_service.create_spotify_oauth()
+        # Exchange the code for token info
+        token_info = auth_manager.get_access_token(code)
+        
+        if not token_info:
+            print("--- Failed to get token info ---")
+            return jsonify({"error": "Failed to get token info"}), 400
+
+        # Store the token info in session
+        session['spotify_token_info'] = token_info
+        session.modified = True
+        print("--- Token stored in session successfully ---")
+        print(f"--- Session content: {dict(session)} ---")
+        
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        print(f"--- Error processing auth code: {str(e)} ---")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
