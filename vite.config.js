@@ -1,12 +1,18 @@
+// vite.config.js
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '127.0.0.1', // Explicitly tell Vite to use 127.0.0.1
+    port: 5173,        // Your desired frontend port (matches your FRONTEND_URL)
     proxy: {
-      '/api': 'http://localhost:5001'
+      '/api': {
+        target: 'http://127.0.0.1:5001', // Your backend
+        changeOrigin: true, // Good for proxies
+        secure: false,      // If your backend is HTTP
+      }
     }
   }
 })
