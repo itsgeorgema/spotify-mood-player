@@ -7,6 +7,21 @@ import { SpotifyDevice } from './types';
 import { apiClient } from './api/client';
 import './App.css';
 
+// Helper function to determine the API endpoint base
+const getApiEndpoint = (pathStartingWithApi: string) => {
+  if (import.meta.env.DEV) {
+    // In development, use relative paths for the Vite proxy.
+    // pathStartingWithApi should be like '/api/check_auth'
+    return pathStartingWithApi;
+  } else {
+    // In production, use the full backend URL from environment variables.
+    // VITE_BACKEND_API_URL should be like https://your-render-app-name.onrender.com
+    // pathStartingWithApi will be appended, e.g., https://your-render-app-name.onrender.com/api/check_auth
+    return `${import.meta.env.VITE_BACKEND_API_URL}${pathStartingWithApi}`;
+  }
+};
+
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -18,7 +33,7 @@ function App() {
   const checkAuthStatus = useCallback(async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/check_auth', {
+      const response = await fetch(getApiEndpoint('/api/check_auth'), {
         credentials: 'include'
       });
       const data = await response.json();
@@ -39,7 +54,7 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      const response = await fetch('/api/logout', {
+      const response = await fetch(getApiEndpoint('/api/logout'), {
         method: 'POST',
         credentials: 'include'
       });
