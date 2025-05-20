@@ -13,26 +13,40 @@ def create_spotify_oauth():
         client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
         redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
         scope=SCOPE,
-        #use .cache for local dev
-        #use database and session storing for production
-        # cache_path=".spotify_token_cache" # Example for file cache
+        show_dialog=True
     )
 
-def get_spotify_client(auth_manager):
-    """
-    Gets a Spotipy client instance.
-    Requires an authenticated SpotifyOAuth object (auth_manager).
-    """
-    if not auth_manager.validate_token(auth_manager.get_cached_token()):
-        print("Token is invalid or expired. Attempting to refresh or needs re-login.")
-        # Attempt to refresh token
-        # The auth_url generation and callback flow should handle initial token acquisition.
+# ...existing imports...
 
-    # If there's no cached token or it's invalid and can't be refreshed,
-    # this will raise an error when trying to make requests.
-    # The web app flow (login -> callback) is responsible for getting the initial token.
-    return spotipy.Spotify(auth_manager=auth_manager)
+def get_spotify_client_from_session():
+    """
+    Gets a Spotipy client instance using tokens stored in the session.
+    Handles token refresh if needed.
+    """
+    token_info = session.get('spotify_token_info', None)
+    if not token_info:
+        return None
 
+    # Check if token needs refresh
+    if int(token_info['expires_at']) - int(time.time()) < 60:
+        try:
+            auth_manager = create_spotify_oauth()
+            new_token = auth_manager.refresh_access_token(token_info['refresh_token'])
+            session['spotify_token_info'] = {
+                'access_token': new_token['access_token'],
+                'refresh_token': new_token.get('refresh_token', token_info['refresh_token']),
+                'expires_at': new_token['expires_at']
+            }
+            session.modified = True
+            access_token = new_token['access_token']
+        except Exception as e:
+            print(f"Token refresh failed: {e}")
+            session.pop('spotify_token_info', None)
+            return None
+    else:
+        access_token = token_info['access_token']
+
+    return spotipy.Spotify(auth=access_token)
 
 def get_tracks_for_mood(sp: spotipy.Spotify, mood: str, limit: int = 20):
     """
