@@ -77,7 +77,7 @@ function PlayerPage(props: PlayerPageProps) {
         )}
         {devices.length === 0 && (
           <p className="warning-message">
-            No Spotify devices found. Please open Spotify on one of your devices and ensure it's active.
+            No Spotify devices found. Please open Spotify on one of your devices and reload the page.
           </p>
         )}
       </main>
@@ -85,7 +85,7 @@ function PlayerPage(props: PlayerPageProps) {
       {message && <p className="message">{message}</p>}
       
       <footer>
-        <p>Ensure Spotify is running on one of your devices.</p>
+        <p>Ensure Spotify is running on one of your devices. If you don't see your device listed, try refreshing the page.</p>
         <p>Spotify Premium may be required for certain playback controls.</p>
       </footer>
     </div>
