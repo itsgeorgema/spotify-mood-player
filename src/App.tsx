@@ -46,6 +46,32 @@ function App() {
     }
   }, []);
 
+  const fetchDevices = useCallback(async () => {
+    try {
+      const response = await (fetch(getApiEndpoint('/api/devices'), {
+        credentials: 'include'
+      }));
+      if (response.ok) {
+        const data = await response.json();
+        if(data.devices){
+          setDevices(data.devices);
+        }}
+    } catch (error) {
+      console.error('Failed to fetch devices:', error);
+      setDevices([]);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated){
+      fetchDevices();
+    }
+    else{
+      setDevices([]);
+      setSelectedDeviceId(null);
+    }
+  }, [isAuthenticated, fetchDevices]);
+
   const handleLogin = () => {
     console.log('Initiating Spotify login...');
     setMessage('Redirecting to Spotify login...');

@@ -41,11 +41,10 @@ if IS_PRODUCTION:
     if not app.config['SERVER_NAME']:
         # Fallback for safety, though RENDER_EXTERNAL_HOSTNAME should exist on Render
         app.config['SERVER_NAME'] = "https://spotify-mood-player-api.onrender.com"
-    
     app.config.update(
-        SESSION_COOKIE_SECURE=True, 
+        SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='None',
+        SESSION_COOKIE_SAMESITE='None', # 'None' for cross-origin requests
         SESSION_COOKIE_PATH='/',
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
