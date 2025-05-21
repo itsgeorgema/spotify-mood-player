@@ -7,30 +7,6 @@ primary_region = 'lax' # Or your preferred Fly.io region
 [build]
   dockerfile = "Dockerfile" # Points to the Dockerfile in your project root
 
-# Define environment variables available at runtime for your backend.
-# Sensitive values (API keys, secrets) MUST be set using `fly secrets set VAR_NAME="VALUE"`
-# Do NOT commit secrets directly into this file.
-[env]
-  PORT = "5001" # The port your Gunicorn server will listen on inside the container. This is used by the CMD in Dockerfile.
-  FLASK_ENV = "production"
-  # PYTHONUNBUFFERED = "1" # Already set in Dockerfile
-  # PYTHONDONTWRITEBYTECODE = "1" # Already set in Dockerfile
-
-  # Frontend URL for CORS configuration in your Flask app.
-  # !!! REPLACE THIS with the actual URL of your Vercel-deployed frontend !!!
-  FRONTEND_URL = "https://your-vercel-frontend-url.vercel.app" 
-
-  # Spotify API Credentials - SET THESE AS SECRETS via `fly secrets set`
-  # Example: SPOTIPY_CLIENT_ID
-  # Example: SPOTIPY_CLIENT_SECRET
-  
-  # Spotify Redirect URI - SET AS SECRET or ensure it's correct for your Fly app
-  # It should be your Fly.io backend's public URL + /api/callback
-  # Example: SPOTIPY_REDIRECT_URI = "https://spotify-mood-player-backend.fly.dev/api/callback" 
-  
-  # Flask Secret Key - SET THIS AS A SECRET via `fly secrets set`
-  # Example: FLASK_SECRET_KEY
-
 [[services]]
   internal_port = 5001 # This MUST match the port Gunicorn (and your [env].PORT) is configured to use inside the container.
   protocol = "tcp"
