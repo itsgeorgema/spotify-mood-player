@@ -79,34 +79,135 @@ main h2 {
 .mood-button {
   padding: 10px 20px;
   font-size: 1em;
+  /* Key Addition/Verification: Add/Ensure line-height */
+  line-height: 1.3; /* You can experiment with 1.2, 1.3, or 1.4. Unitless is good. */
   border-radius: 25px;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: all 0.3s ease;
-  font-weight: 500;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  font-weight: bold;      /* Button container is bold by default to reserve space */
   min-width: 100px;
+  box-sizing: border-box;
+  text-align: center;
+  position: relative;
+}
+
+.mood-button .button-text {
+  display: inline-block;
+  font-weight: 500;      /* Actual text content is initially normal weight */
+  /* Key Addition/Verification: Add/Ensure vertical-align */
+  vertical-align: middle; /* Helps align the inline-block span within the button's line height */
 }
 
 .mood-button:hover {
   opacity: 0.8;
 }
+
+/* General selected state for the button container */
 .mood-button.selected {
-  border-color: #1DB954;
-  color: #1DB954;
+  border-color: #1DB954; /* Default selected border, overridden by mood-specific if needed */
+}
+
+/* General selected state for the text inside the button */
+.mood-button.selected .button-text {
+  font-weight: bold;   /* Text becomes bold on selection */
+  color: #1DB954;      /* Default selected text color, needs to be overridden by specific moods if they use different text colors */
+}
+
+/* --- Mood specific UNSELECTED styles --- */
+/* Your existing unselected styles seem fine, ensure .button-text has the correct color */
+.mood-happy { background-color: #f1930f; }
+.mood-happy .button-text { color: white; } /* */
+
+.mood-sad   { background-color: #3498db; }
+.mood-sad .button-text { color: white; } /* */
+
+.mood-energetic { background-color: #46b655; }
+.mood-energetic .button-text { color: white; } /* */
+
+.mood-calm  { background-color: #9b59b6; }
+.mood-calm .button-text { color: white; } /* */
+
+.mood-mad { background-color: #e73c3c; }
+.mood-mad .button-text { color: white; } /* */
+
+.mood-romantic { background-color: #d500ae; }
+.mood-romantic .button-text { color: white; } /* */
+
+.mood-focused { background-color: #1219dd; }
+.mood-focused .button-text { color: white; } /* */
+
+.mood-mysterious { background-color: #384360; }
+.mood-mysterious .button-text { color: white; } /* */
+
+
+/* --- Mood specific SELECTED styles --- */
+/* Ensure each selected mood explicitly styles .button-text for color and font-weight */
+
+.mood-happy.selected {
+  background-color: #f37712; /* */
+  /* border-color: #f37712; /* Optional: if you want border to match bg */
+}
+.mood-happy.selected .button-text {
+  font-weight: bold; /* Reiterate for clarity */
+}
+
+.mood-sad.selected {
+  background-color: #2980b9; /* */
+  /* border-color: #2980b9; */
+}
+.mood-sad.selected .button-text {
   font-weight: bold;
 }
 
-/* Mood specific colors - examples */
-.mood-happy { background-color: #f1c40f; color: #333; }
-.mood-sad   { background-color: #3498db; color: white; }
-.mood-energetic { background-color: #e74c3c; color: white; }
-.mood-calm  { background-color: #9b59b6; color: white; }
+.mood-energetic.selected {
+  background-color: #40ab4e; /* */
+  /* border-color: #40ab4e; */
+}
+.mood-energetic.selected .button-text {
+  color: black; /* */
+  font-weight: bold;
+}
 
-.mood-happy.selected { border-color: #f39c12; background-color: #f39c12; color: white; }
-.mood-sad.selected { border-color: #2980b9; background-color: #2980b9; }
-.mood-energetic.selected { border-color: #c0392b; background-color: #c0392b; }
-.mood-calm.selected { border-color: #8e44ad; background-color: #8e44ad; }
+.mood-calm.selected {
+  background-color: #8e44ad; /* */
+  /* border-color: #8e44ad; */
+}
+.mood-calm.selected .button-text {
+  font-weight: bold;
+}
 
+.mood-mad.selected {
+  background-color: #db3636; /* */
+  /* border-color: #db3636; */
+}
+.mood-mad.selected .button-text {
+  font-weight: bold;
+}
+
+.mood-romantic.selected {
+  background-color: #d500ae; /* */
+  /* border-color: #d500ae; */
+}
+.mood-romantic.selected .button-text {
+  font-weight: bold;
+}
+
+.mood-focused.selected {
+  background-color: #1016cd; /* */
+  /* border-color: #1016cd; */
+}
+.mood-focused.selected .button-text {
+  font-weight: bold;
+}
+
+.mood-mysterious.selected {
+  background-color: #313b57; /* */
+  /* border-color: #313b57; */
+}
+.mood-mysterious.selected .button-text {
+  font-weight: bold;
+}
 
 .device-selector {
   margin-top: 20px;

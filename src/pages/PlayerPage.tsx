@@ -35,7 +35,7 @@ function PlayerPage(props: PlayerPageProps) {
     return <Navigate to="/" replace />;
   }
 
-  const moods = ["happy", "sad", "energetic", "calm"];
+  const moods = ["happy", "sad", "mad", "calm", "romantic", "energetic", "focused", "mysterious"];
 
   return (
     <div className="container">
@@ -55,7 +55,7 @@ function PlayerPage(props: PlayerPageProps) {
               onClick={() => handleMoodSelect(mood)}
               className={`mood-button ${selectedMood === mood ? 'selected' : ''} mood-${mood}`}
             >
-              {mood.charAt(0).toUpperCase() + mood.slice(1)}
+              <span className="button-text">{mood.charAt(0).toUpperCase() + mood.slice(1)}</span>
             </button>
           ))}
         </div>
