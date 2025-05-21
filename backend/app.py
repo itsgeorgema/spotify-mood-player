@@ -203,6 +203,35 @@ def spotify_logout():
     sys.stdout.flush()
     return jsonify({"message": "Logged out successfully"}), 200
 
+@app.route('/api/sentiment_analysis', methods=['POST'])
+def sentiment_analysis_route():
+    print("--- /api/sentiment_analysis route hit ---")
+    sys.stdout.flush()
+    ##THIS IS A PLACE HOLDER FOR ACTUALLY GETTING THE TRACKS. UTILIZE FUNCTIONS FROM spotify_service.py
+    #TO FETCH THE TRACKS FROM USER LIBRARY, FOR WHICH YOU WOULD THEN USE FOR SENTIMENT ANALYSIS
+    data = request.get_json()
+    if not data or 'tracks' not in data:
+        print("--- /api/sentiment_analysis: No tracks provided. ---")
+        sys.stdout.flush()
+        return jsonify({"error": "No tracks provided for sentiment analysis."}), 400
+    # 2. Fetch audio features for these songs (Spotify API allows up to 100 IDs per call)
+        #    This logic would likely be in sentiment_analysis.py or a helper there.
+        #    For simplicity, let's assume a function that handles this.
+        #    Example: all_song_features_data = sentiment_analysis.fetch_features_for_tracks(sp, user_songs_raw)
+
+    tracks = data['tracks']
+    # Perform sentiment analysis on the tracks
+    # THIS IS A PLACE HOLDER FOR THE ACTUAL SENTIMENT ANALYSIS LOGIC
+    print(f"--- /api/sentiment_analysis: Analyzing sentiment for {len(tracks)} tracks. ---")
+    sys.stdout.flush()
+    # Simulate sentiment analysis results
+    # USE PANDAS TO CREATE A DATAFRAME WITH SENTIMENTS AND TRACK URIS
+    # PUT THE ANALYZED RESULTS INTO A CSV FILE OR JSON SERIALIZABLE FORMAT
+    # WITH THE TRACKS AND THEIR MOOD TO ACCESS LATER
+    # THEN, handleMoodSelect in App.tsx will read CSV FILE and use results to play the moods
+    analysis_results = [{"track": track, "sentiment": "positive"} for track in tracks]
+    return jsonify({"analysis": analysis_results}), 200
+
 @app.route('/api/mood-tracks', methods=['GET'])
 def get_mood_tracks_route():
     print("--- /api/mood-tracks route hit ---")
