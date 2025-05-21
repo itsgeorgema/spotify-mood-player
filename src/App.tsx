@@ -37,6 +37,13 @@ function App() {
         credentials: 'include'
       });
       const data = await response.json();
+      if(data.isAuthenticated){
+        //if user is authenticated, conduct sentiment analysis on the saved songs and sort it in to csv
+        //fetch app route, maybe new app route called /api/sentiment_analysis
+        //want to do the sentiment analysis when user is authenticated, not when buttons are selected 
+        //so that the csv is already sorted when user selects a mood and you 
+        //dont have to sort every time a button is clicked
+      }
       setIsAuthenticated(data.isAuthenticated);
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -96,6 +103,8 @@ function App() {
   const handleMoodSelect = async (mood: string) => {
     setSelectedMood(mood);
     // ... rest of your mood selection logic
+    //when mood is selected, route to backend for /api/mood-tracks and /api/play 
+    // in those app routes, get the csv file and then play a random song that matches the mood value
   };
 
   useEffect(() => {
