@@ -37,8 +37,7 @@ backend_port_local_dev = os.getenv('PORT', '5001') # Default for local, Render s
 if IS_PRODUCTION:
     fly_app_hostname = os.getenv('FLY_APP_HOSTNAME')
     if fly_app_hostname:
-        app.config['SERVER_NAME'] = fly_app_hostname
-        app.config['SESSION_COOKIE_DOMAIN'] = f".{fly_app_hostname.split('.', 1)[-1]}"                                           
+        app.config['SERVER_NAME'] = fly_app_hostname                                       
     else:
         # Fallback if FLY_APP_HOSTNAME isn't set
         app.config['SERVER_NAME'] = "https://mood-player-backend.fly.dev"
