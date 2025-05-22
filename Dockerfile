@@ -26,4 +26,4 @@ ENV FLASK_ENV production
 # Gunicorn is a production-ready WSGI HTTP server for UNIX.
 # We point it to the 'app' Flask instance within your 'app.py' file.
 # The working directory is /app, so backend.app means /app/backend/app.py
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "backend.app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--chdir", "backend", "app:app"]
