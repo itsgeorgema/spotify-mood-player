@@ -35,12 +35,14 @@ IS_PRODUCTION = os.getenv('FLASK_ENV') == 'production'
 backend_port_local_dev = os.getenv('PORT', '5001') # Default for local, Render sets its own PORT env var for Gunicorn
 
 if IS_PRODUCTION:
-    # For Render, RENDER_EXTERNAL_HOSTNAME is automatically set and includes the domain.
-    # render will handle port mapping so dont need to set port
-    app.config['SERVER_NAME'] = os.getenv('RENDER_EXTERNAL_HOSTNAME')
-    if not app.config['SERVER_NAME']:
-        # Fallback for safety, though RENDER_EXTERNAL_HOSTNAME should exist on Render
-        app.config['SERVER_NAME'] = "https://spotify-mood-player-api.onrender.com"
+    fly_app_hostname = os.getenv('FLY_APP_HOSTNAME')
+    if fly_app_hostname:
+        app.config['SERVER_NAME'] = fly_app_hostname
+        app.config['SESSION_COOKIE_DOMAIN'] = f".{fly_app_hostname.split('.', 1)[-1]}"                                           
+    else:
+        # Fallback if FLY_APP_HOSTNAME isn't set
+        app.config['SERVER_NAME'] = "https://mood-player-backend.fly.dev"
+
     app.config.update(
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
