@@ -29,6 +29,7 @@ import spotify_service
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
+print(f"SECRET KEY IS THIS: {app.secret_key}")
 
 # --- Environment-Specific Configuration ---
 IS_PRODUCTION = os.getenv('FLASK_ENV') == 'production'
@@ -120,7 +121,9 @@ def get_spotify_client_from_session():
             return None
     if not token_info:
         return None
-    return spotipy.Spotify(auth=token_info['access_token'])
+    sp_client = spotipy.Spotify(auth=token_info['access_token'])
+    print(f"--- get_spotify_client_from_session: Spotipy client created: {sp_client} (Type: {type(sp_client)}) ---")
+    return sp_client
 
 # --- API Routes ---
 @app.route('/api/login', methods=['GET'])
