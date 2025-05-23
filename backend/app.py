@@ -123,6 +123,7 @@ def get_spotify_client_from_session():
         return None
     sp_client = spotipy.Spotify(auth=token_info['access_token'])
     print(f"--- get_spotify_client_from_session: Spotipy client created: {sp_client} (Type: {type(sp_client)}) ---")
+    print(f"--- Spotipy client authenticated as user: {sp_client.current_user()['id']} ---")
     return sp_client
 
 # --- API Routes ---
