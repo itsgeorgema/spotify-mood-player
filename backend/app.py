@@ -150,6 +150,9 @@ def spotify_callback():
     try:
         auth_manager = spotify_service.create_spotify_oauth()
         code = request.args.get('code')
+
+        print(f"--- CALLBACK DEBUG: Received code: {code} ---")
+        sys.stdout.flush()
         
         if not code:
             print("--- /api/callback: No code provided ---")
@@ -157,6 +160,9 @@ def spotify_callback():
 
         # Exchange authorization code for tokens
         token_info = auth_manager.get_access_token(code)
+
+        print(f"--- CALLBACK DEBUG: Token info after get_access_token: {token_info} ---")
+        sys.stdout.flush()
         
         # Store tokens in session with explicit session configuration
         session.permanent = True  # Make the session permanent
