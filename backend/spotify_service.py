@@ -14,6 +14,9 @@ def create_spotify_oauth():
         redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
         scope=SCOPE,
         show_dialog=True
+        cache_path=None #make sure to set this to None to avoid caching issues
+        #DO NOT STORE CACHE because sensitive data and also because our method of storing tokens
+        #is in the session cookies from Flask (more security because encrypted by FLASK_SECRET_KEY)
     )
 
 # ...existing imports...
