@@ -5,7 +5,7 @@ from datetime import timedelta
 from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+#revert
 
 # Attempt to load dotenv and check its status
 try:
