@@ -148,39 +148,19 @@ def spotify_callback():
     print("--- /api/callback route hit ---")
     sys.stdout.flush()
     try:
+        auth_manager = spotify_service.create_spotify_oauth()
         code = request.args.get('code')
-        
-        # Directly create SpotifyOAuth here with cache_path=None
-        # This isolates the OAuth process for the callback
-        client_id = os.getenv("SPOTIPY_CLIENT_ID")
-        client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
-        redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
-        scope = "user-read-private user-read-email user-library-read playlist-read-private streaming user-modify-playback-state user-read-playback-state"
-        
-        # ADDED DEBUG PRINTS FOR DIRECT INSTANTIATION
-        print(f"--- CALLBACK DEBUG: Instantiating SpotifyOAuth with Client ID: {client_id} ---")
-        print(f"--- CALLBACK DEBUG: Instantiating SpotifyOAuth with Redirect URI: {redirect_uri} ---")
-        sys.stdout.flush()
-
-        auth_manager = SpotifyOAuth(
-            client_id=client_id,
-            client_secret=client_secret,
-            redirect_uri=redirect_uri,
-            scope=scope,
-            show_dialog=True,
-            cache_path=None # Explicitly disable caching here as well
-        )
 
         print(f"--- CALLBACK DEBUG: Received code: {code} ---")
         sys.stdout.flush()
-
+        
         if not code:
             print("--- /api/callback: No code provided ---")
             return redirect(f"{frontend_url_from_env}/?error=no_code")
 
         # Exchange authorization code for tokens
         token_info = auth_manager.get_access_token(code)
-        
+
         print(f"--- CALLBACK DEBUG: Token info after get_access_token: {token_info} ---")
         sys.stdout.flush()
         
@@ -198,6 +178,7 @@ def spotify_callback():
         response = redirect(f"{frontend_url_from_env}/callback?login_success=true")
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         return response
+
     except Exception as e:
         print(f"--- Error in callback: {str(e)} ---")
         traceback.print_exc()
