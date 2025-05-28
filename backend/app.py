@@ -4,7 +4,9 @@ import traceback
 from datetime import timedelta  
 from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
-import spotipy
+import time
+from lyrics_service import analyze_user_library, get_tracks_for_mood
+import spotify_service
 
 # Attempt to load dotenv and check its status
 try:
@@ -23,9 +25,6 @@ except ImportError:
     print("--- WARNING: python-dotenv module not found. pip install python-dotenv if you are using a .env file for local dev. ---")
     print("--- Relying on system environment variables. ---")
 sys.stdout.flush()
-
-# Assuming spotify_service.py is in the same backend directory
-import spotify_service
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
@@ -89,42 +88,6 @@ CORS(app,
      }},
      supports_credentials=True)
 
-
-# --- Helper to get Spotipy client from session ---
-# (get_spotify_client_from_session function remains the same as in the previous "Explicit Cookie Domain" version)
-def get_spotify_client_from_session():
-    token_info = session.get('spotify_token_info', None)
-    if not token_info:
-        print("--- get_spotify_client_from_session: No token_info in session. ---")
-        sys.stdout.flush()
-        return None
-    try:
-        auth_manager = spotify_service.create_spotify_oauth() 
-    except ValueError as ve:
-        print(f"--- ERROR in get_spotify_client_from_session when creating auth_manager: {ve} ---")
-        sys.stdout.flush()
-        return None 
-    if auth_manager.is_token_expired(token_info):
-        print("--- Spotify token is expired. Attempting to refresh... ---")
-        sys.stdout.flush()
-        try:
-            token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
-            session['spotify_token_info'] = token_info
-            session.modified = True 
-            print("--- Spotify token refreshed successfully. ---")
-            sys.stdout.flush()
-        except Exception as e:
-            print(f"--- Error refreshing Spotify token: {e}. User may need to re-login. ---")
-            traceback.print_exc()
-            sys.stdout.flush()
-            session.pop('spotify_token_info', None) 
-            return None
-    if not token_info:
-        return None
-    sp_client = spotipy.Spotify(auth=token_info['access_token'])
-    print(f"--- get_spotify_client_from_session: Spotipy client created: {sp_client} (Type: {type(sp_client)}) ---")
-    print(f"--- Spotipy client authenticated as user: {sp_client.current_user()['id']} ---")
-    return sp_client
 
 # --- API Routes ---
 @app.route('/api/login', methods=['GET'])
@@ -196,7 +159,7 @@ def check_auth_status():
         print("--- No token_info in session ---")
         return jsonify({"isAuthenticated": False}), 200
 
-    sp_client = get_spotify_client_from_session()
+    sp_client = spotify_service.get_spotify_client_from_session()
     if sp_client:
         print("--- User is authenticated with valid token ---")
         return jsonify({"isAuthenticated": True}), 200
@@ -218,96 +181,118 @@ def spotify_logout():
 def sentiment_analysis_route():
     print("--- /api/sentiment_analysis route hit ---")
     sys.stdout.flush()
-    ##THIS IS A PLACE HOLDER FOR ACTUALLY GETTING THE TRACKS. UTILIZE FUNCTIONS FROM spotify_service.py
-    #TO FETCH THE TRACKS FROM USER LIBRARY, FOR WHICH YOU WOULD THEN USE FOR SENTIMENT ANALYSIS
-    data = request.get_json()
-    if not data or 'tracks' not in data:
-        print("--- /api/sentiment_analysis: No tracks provided. ---")
+    
+    sp = spotify_service.get_spotify_client_from_session()
+    if not sp:
+        print("--- /api/sentiment_analysis: User not authenticated. ---")
         sys.stdout.flush()
-        return jsonify({"error": "No tracks provided for sentiment analysis."}), 400
-    # 2. Fetch audio features for these songs (Spotify API allows up to 100 IDs per call)
-        #    This logic would likely be in sentiment_analysis.py or a helper there.
-        #    For simplicity, let's assume a function that handles this.
-        #    Example: all_song_features_data = sentiment_analysis.fetch_features_for_tracks(sp, user_songs_raw)
+        return jsonify({"error": "User not authenticated or token expired. Please login."}), 401
 
-    tracks = data['tracks']
-    # Perform sentiment analysis on the tracks
-    # THIS IS A PLACE HOLDER FOR THE ACTUAL SENTIMENT ANALYSIS LOGIC
-    print(f"--- /api/sentiment_analysis: Analyzing sentiment for {len(tracks)} tracks. ---")
+    # Check if we already have mood data
+    existing_mood_uris = session.get('mood_uris')
+    if existing_mood_uris and any(existing_mood_uris.values()):
+        print("--- Using existing mood analysis ---")
+        return jsonify({
+            "message": "Using existing analysis",
+            "available_moods": list(existing_mood_uris.keys())
+        }), 200
+
+    try:
+        # Analyze user's library and get mood->uris dict
+        mood_uris = analyze_user_library(sp)
+        if not mood_uris:
+            print("--- No tracks analyzed ---")
+            return jsonify({"error": "No tracks found to analyze"}), 404
+        session['mood_uris'] = mood_uris
+        session.modified = True
+        print(f"--- Analyzed and stored moods: {list(mood_uris.keys())} ---")
+        sys.stdout.flush()
+        return jsonify({
+            "message": "Library analyzed successfully",
+            "available_moods": list(mood_uris.keys())
+        }), 200
+    except Exception as e:
+        print(f"--- Error in sentiment analysis: {e} ---")
+        traceback.print_exc()
+        sys.stdout.flush()
+        return jsonify({"error": "Failed to analyze library"}), 500
+
+@app.route('/api/analyze', methods=['POST'])
+def analyze_library_route():
+    """route to manually trigger library analysis"""
+    print("--- /api/analyze route hit ---")
     sys.stdout.flush()
-    # Simulate sentiment analysis results
-    # USE PANDAS TO CREATE A DATAFRAME WITH SENTIMENTS AND TRACK URIS
-    # PUT THE ANALYZED RESULTS INTO A CSV FILE OR JSON SERIALIZABLE FORMAT
-    # WITH THE TRACKS AND THEIR MOOD TO ACCESS LATER
-    # THEN, handleMoodSelect in App.tsx will read CSV FILE and use results to play the moods
-    analysis_results = [{"track": track, "sentiment": "positive"} for track in tracks]
-    return jsonify({"analysis": analysis_results}), 200
+    
+    sp = spotify_service.get_spotify_client_from_session()
+    if not sp:
+        print("--- /api/analyze: User not authenticated ---")
+        return jsonify({"error": "Not authenticated"}), 401
+
+    try:
+        mood_uris = analyze_user_library(sp)
+        if not mood_uris:
+            return jsonify({"error": "No tracks found"}), 404
+
+        session['mood_uris'] = mood_uris
+        session['last_analysis'] = time.time()
+        session.modified = True
+
+        # Count total tracks and moods
+        total_tracks = sum(len(uris) for uris in mood_uris.values())
+        moods = list(mood_uris.keys())
+
+        return jsonify({
+            "message": "Analysis complete",
+            "tracks_analyzed": total_tracks,
+            "moods": moods
+        }), 200
+    except Exception as e:
+        print(f"Error in analyze route: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/mood-tracks', methods=['GET'])
 def get_mood_tracks_route():
     print("--- /api/mood-tracks route hit ---")
     sys.stdout.flush()
+    sp = spotify_service.get_spotify_client_from_session()
+    if not sp:
+        return jsonify({"error": "Not authenticated"}), 401
     mood = request.args.get('mood')
     if not mood:
-        print("--- /api/mood-tracks: Mood parameter missing. ---")
-        sys.stdout.flush()
-        return jsonify({"error": "Mood parameter is required"}), 400
-
-    sp = get_spotify_client_from_session()
-    if not sp:
-        print("--- /api/mood-tracks: User not authenticated. ---")
-        sys.stdout.flush()
-        return jsonify({"error": "User not authenticated or token expired. Please login."}), 401
-
-    try:
-        print(f"--- /api/mood-tracks: Fetching tracks for mood: {mood} ---")
-        sys.stdout.flush()
-        track_uris = spotify_service.get_tracks_for_mood(sp, mood)
-        if track_uris:
-            print(f"--- /api/mood-tracks: Found {len(track_uris)} tracks. ---")
-            sys.stdout.flush()
-            return jsonify({"track_uris": track_uris}), 200
-        else:
-            print("--- /api/mood-tracks: No tracks found or error fetching. ---")
-            sys.stdout.flush()
-            return jsonify({"message": "No tracks found for this mood or error fetching."}), 404
-    except Exception as e:
-        print(f"--- Error in /api/mood-tracks: {e} ---")
-        traceback.print_exc()
-        sys.stdout.flush()
-        return jsonify({"error": "Failed to get tracks for mood.", "details": str(e)}), 500
+        return jsonify({"error": "No mood specified"}), 400
+    mood_uris = session.get('mood_uris')
+    if not mood_uris:
+        print("--- No analyzed tracks in session. Please analyze your library first. ---")
+        return jsonify({"error": "No analyzed tracks in session. Please analyze your library first."}), 400
+    track_uris = get_tracks_for_mood(mood_uris, mood)
+    if not track_uris:
+        print(f"--- No tracks found for mood: {mood} ---")
+        return jsonify({"track_uris": []}), 200  # Return empty array instead of error
+    print(f"--- Found {len(track_uris)} tracks for mood: {mood} ---")
+    return jsonify({"track_uris": track_uris}), 200
 
 @app.route('/api/play', methods=['POST'])
 def play_tracks_route():
     print("--- /api/play route hit ---")
     sys.stdout.flush()
-    data = request.get_json()
+    sp = spotify_service.get_spotify_client_from_session()
+    if not sp:
+        return jsonify({"error": "Not authenticated"}), 401
+    data = request.json or {}
     track_uris = data.get('track_uris')
     device_id = data.get('device_id')
-
     if not track_uris:
-        print("--- /api/play: track_uris are required. ---")
-        sys.stdout.flush()
-        return jsonify({"error": "track_uris are required"}), 400
-
-    sp = get_spotify_client_from_session()
-    if not sp:
-        print("--- /api/play: User not authenticated. ---")
-        sys.stdout.flush()
-        return jsonify({"error": "User not authenticated or token expired. Please login."}), 401
-
-    print(f"--- /api/play: Attempting to play {len(track_uris)} tracks. Device ID: {device_id} ---")
-    sys.stdout.flush()
-    success = spotify_service.play_tracks(sp, track_uris, device_id)
-    if success:
-        print("--- /api/play: Playback started successfully. ---")
-        sys.stdout.flush()
-        return jsonify({"message": "Playback started."}), 200
-    else:
-        print("--- /api/play: Failed to start playback. ---")
-        sys.stdout.flush()
-        return jsonify({"error": "Failed to start playback. Ensure Spotify is active and you have Premium if required."}), 500
-
+        return jsonify({"error": "No tracks provided"}), 400
+    if not device_id:
+        return jsonify({"error": "No device selected. Please select a playback device in Spotify and try again."}), 400
+    try:
+        print(f"--- Attempting to play {len(track_uris)} tracks on device {device_id} ---")
+        sp.start_playback(device_id=device_id, uris=track_uris)
+        return jsonify({"message": "Playback started"}), 200
+    except Exception as e:
+        print(f"--- Error starting playback: {str(e)} ---")
+        return jsonify({"error": "Failed to start playback. Make sure your Spotify app is open and a device is active."}), 500
+        
 @app.route('/api/queue', methods=['POST'])
 def queue_tracks_route():
     print("--- /api/queue route hit ---")
@@ -321,7 +306,7 @@ def queue_tracks_route():
         sys.stdout.flush()
         return jsonify({"error": "track_uris are required"}), 400
 
-    sp = get_spotify_client_from_session()
+    sp = spotify_service.get_spotify_client_from_session()
     if not sp:
         print("--- /api/queue: User not authenticated. ---")
         sys.stdout.flush()
@@ -343,7 +328,7 @@ def queue_tracks_route():
 def get_devices_route():
     print("--- /api/devices route hit ---")
     sys.stdout.flush()
-    sp = get_spotify_client_from_session()
+    sp = spotify_service.get_spotify_client_from_session()
     if not sp:
         print("--- /api/devices: User not authenticated. ---")
         sys.stdout.flush()
