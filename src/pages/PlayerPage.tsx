@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { SpotifyDevice } from '../types';
+import MusicAnalysisLoading from './MusicAnalysisLoading';
 
 interface PlayerPageProps {
   isAuthenticated: boolean;
@@ -28,7 +29,7 @@ function PlayerPage(props: PlayerPageProps) {
   } = props;
 
   if (isLoading) {
-    return <div className="container">Loading player...</div>;
+    return <MusicAnalysisLoading />;
   }
 
   if (!isAuthenticated) {
@@ -67,6 +68,7 @@ function PlayerPage(props: PlayerPageProps) {
               value={selectedDeviceId || ''}
               onChange={(e) => setSelectedDeviceId(e.target.value)}
             >
+              <option value="">Select a device</option>
               {devices.map((device) => (
                 <option key={device.id || 'unknown_device'} value={device.id || ''}>
                   {device.name} ({device.type})

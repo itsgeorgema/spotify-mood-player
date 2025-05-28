@@ -7,3 +7,7 @@ export interface SpotifyDevice {
   type: string;
   volume_percent: number | null;
 }
+export interface TracksResponse {
+    track_uris: string[];
+    count: number;
+}
