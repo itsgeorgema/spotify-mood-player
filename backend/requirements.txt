@@ -1,7 +1,11 @@
 Flask
 Flask-Cors
-Spotipy
-TextBlob
-Pandas
-Gunicorn
-dotenv
+spotipy
+gunicorn
+python-dotenv
+requests
+nltk
+lyricsgenius
+librosa
+numpy
+pydub

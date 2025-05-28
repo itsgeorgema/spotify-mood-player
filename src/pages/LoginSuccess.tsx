@@ -1,47 +1,31 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import MusicAnalysisLoading from './MusicAnalysisLoading';
 
-interface LoginSuccessProps {
-  checkAuthStatus: () => Promise<void>;
-}
-
-function LoginSuccess({ checkAuthStatus }: LoginSuccessProps) {
-  const [isProcessing, setIsProcessing] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const location = useLocation();
+const LoginSuccess: React.FC<{ checkAuthStatus: () => Promise<void> }> = ({ checkAuthStatus }) => {
+  const navigate = useNavigate();
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
-    const processLogin = async () => {
-      const params = new URLSearchParams(location.search);
-      const loginSuccess = params.get('login_success');
-      
-      if (loginSuccess === 'true') {
-        try {
-          await checkAuthStatus();
-          setIsProcessing(false);
-        } catch (error) {
-          console.error('Failed to verify authentication:', error);
-          setError('Authentication verification failed');
-          setIsProcessing(false);
-        }
-      } else {
-        setError('Login was not successful');
-        setIsProcessing(false);
+    const handleLoginSuccess = async () => {
+      try {
+        await checkAuthStatus();
+        setIsAnalyzing(true);
+        // The actual sentiment analysis will be triggered by MusicAnalysisLoading component
+        navigate('/analyzing');
+      } catch (error) {
+        console.error('Login verification failed:', error);
+        navigate('/');
       }
     };
+    handleLoginSuccess();
+  }, [checkAuthStatus, navigate]);
 
-    processLogin();
-  }, [location.search, checkAuthStatus]);
-
-  if (isProcessing) {
-    return <div>Finalizing login...</div>;
+  if (isAnalyzing) {
+    return <MusicAnalysisLoading />;
   }
 
-  if (error) {
-    return <Navigate to="/" replace />;
-  }
-
-  return <Navigate to="/player" replace />;
-}
+  return null;
+};
 
 export default LoginSuccess;
