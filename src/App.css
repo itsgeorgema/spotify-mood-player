@@ -3,48 +3,51 @@ body {
     Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   margin: 0;
   padding: 0;
-  background-color: #121212; /* Dark background */
+  background-color: #121212;
   color: #ffffff;
+  min-height: 100vh;
   display: flex;
   justify-content: center;
-  align-items: flex-start; /* Align to top for scrolling */
-  min-height: 100vh;
+  align-items: center;
   text-align: center;
 }
 
 .container {
-  background-color: #1e1e1e; /* Slightly lighter dark shade for container */
-  padding: 20px 40px;
+  background-color: #1e1e1e;
+  padding: 20px;
   border-radius: 12px;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-  margin-top: 30px;
-  margin-bottom: 30px;
   width: 90%;
   max-width: 600px;
+  margin: 20px;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 header {
   margin-bottom: 30px;
   padding-bottom: 20px;
   border-bottom: 1px solid #333;
+  text-align: center;
 }
 
 header h1 {
-  color: #1DB954; /* Spotify Green */
+  color: #1DB954;
   margin-bottom: 20px;
+  text-align: center;
 }
 
 .spotify-button {
-  background-color: #1DB954; /* Spotify Green */
+  background-color: #1DB954;
   color: white;
   border: none;
   padding: 12px 24px;
-  border-radius: 50px; /* Pill shape */
+  border-radius: 50px;
   font-size: 16px;
   font-weight: bold;
   cursor: pointer;
   transition: background-color 0.3s ease, transform 0.1s ease;
-  text-decoration: none; /* For anchor tags if used */
+  text-decoration: none;
   display: inline-block;
 }
 
@@ -62,10 +65,14 @@ header h1 {
   background-color: #6a6a6a;
 }
 
+main {
+  text-align: center;
+}
 
 main h2 {
   margin-bottom: 20px;
   color: #eee;
+  text-align: center;
 }
 
 .mood-buttons {
@@ -79,13 +86,12 @@ main h2 {
 .mood-button {
   padding: 10px 20px;
   font-size: 1em;
-  /* Key Addition/Verification: Add/Ensure line-height */
-  line-height: 1.3; /* You can experiment with 1.2, 1.3, or 1.4. Unitless is good. */
+  line-height: 1.3;
   border-radius: 25px;
   border: 2px solid transparent;
   cursor: pointer;
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-  font-weight: bold;      /* Button container is bold by default to reserve space */
+  font-weight: bold;
   min-width: 100px;
   box-sizing: border-box;
   text-align: center;
@@ -94,128 +100,115 @@ main h2 {
 
 .mood-button .button-text {
   display: inline-block;
-  font-weight: 500;      /* Actual text content is initially normal weight */
-  /* Key Addition/Verification: Add/Ensure vertical-align */
-  vertical-align: middle; /* Helps align the inline-block span within the button's line height */
+  font-weight: 500;
+  vertical-align: middle;
 }
 
 .mood-button:hover {
   opacity: 0.8;
 }
 
-/* General selected state for the button container */
 .mood-button.selected {
-  border-color: #1DB954; /* Default selected border, overridden by mood-specific if needed */
+  border-color: #1DB954;
 }
 
-/* General selected state for the text inside the button */
 .mood-button.selected .button-text {
-  font-weight: bold;   /* Text becomes bold on selection */
-  color: #1DB954;      /* Default selected text color, needs to be overridden by specific moods if they use different text colors */
+  font-weight: bold;
+  color: #1DB954;
 }
 
-/* --- Mood specific UNSELECTED styles --- */
-/* Your existing unselected styles seem fine, ensure .button-text has the correct color */
 .mood-happy { background-color: #f1930f; }
-.mood-happy .button-text { color: white; } /* */
+.mood-happy .button-text { color: white; }
 
 .mood-sad   { background-color: #3498db; }
-.mood-sad .button-text { color: white; } /* */
+.mood-sad .button-text { color: white; }
 
 .mood-energetic { background-color: #46b655; }
-.mood-energetic .button-text { color: white; } /* */
+.mood-energetic .button-text { color: white; }
 
 .mood-calm  { background-color: #9b59b6; }
-.mood-calm .button-text { color: white; } /* */
+.mood-calm .button-text { color: white; }
 
 .mood-mad { background-color: #e73c3c; }
-.mood-mad .button-text { color: white; } /* */
+.mood-mad .button-text { color: white; }
 
 .mood-romantic { background-color: #d500ae; }
-.mood-romantic .button-text { color: white; } /* */
+.mood-romantic .button-text { color: white; }
 
 .mood-focused { background-color: #1219dd; }
-.mood-focused .button-text { color: white; } /* */
+.mood-focused .button-text { color: white; }
 
 .mood-mysterious { background-color: #384360; }
-.mood-mysterious .button-text { color: white; } /* */
+.mood-mysterious .button-text { color: white; }
 
 
-/* --- Mood specific SELECTED styles --- */
-/* Ensure each selected mood explicitly styles .button-text for color and font-weight */
 
 .mood-happy.selected {
-  background-color: #f37712; /* */
-  /* border-color: #f37712; /* Optional: if you want border to match bg */
+  background-color: #f37712;
 }
 .mood-happy.selected .button-text {
-  font-weight: bold; /* Reiterate for clarity */
+  font-weight: bold;
 }
 
 .mood-sad.selected {
-  background-color: #2980b9; /* */
-  /* border-color: #2980b9; */
+  background-color: #2980b9;
 }
 .mood-sad.selected .button-text {
   font-weight: bold;
 }
 
 .mood-energetic.selected {
-  background-color: #40ab4e; /* */
-  /* border-color: #40ab4e; */
+  background-color: #40ab4e;
 }
 .mood-energetic.selected .button-text {
-  color: black; /* */
+  color: black;
   font-weight: bold;
 }
 
 .mood-calm.selected {
-  background-color: #8e44ad; /* */
-  /* border-color: #8e44ad; */
+  background-color: #8e44ad;
 }
 .mood-calm.selected .button-text {
   font-weight: bold;
 }
 
 .mood-mad.selected {
-  background-color: #db3636; /* */
-  /* border-color: #db3636; */
+  background-color: #db3636;
 }
 .mood-mad.selected .button-text {
   font-weight: bold;
 }
 
 .mood-romantic.selected {
-  background-color: #d500ae; /* */
-  /* border-color: #d500ae; */
+  background-color: #d500ae;
 }
 .mood-romantic.selected .button-text {
   font-weight: bold;
 }
 
 .mood-focused.selected {
-  background-color: #1016cd; /* */
-  /* border-color: #1016cd; */
+  background-color: #1016cd;
 }
 .mood-focused.selected .button-text {
   font-weight: bold;
 }
 
 .mood-mysterious.selected {
-  background-color: #313b57; /* */
-  /* border-color: #313b57; */
+  background-color: #313b57;
 }
 .mood-mysterious.selected .button-text {
   font-weight: bold;
 }
 
 .device-selector {
-  margin-top: 20px;
-  margin-bottom: 20px;
+  margin: 20px auto;
+  text-align: center;
+  max-width: 400px;
 }
 .device-selector h3 {
   margin-bottom: 10px;
   color: #ccc;
+  text-align: center;
 }
 .device-selector select {
   padding: 10px;
@@ -225,23 +218,35 @@ main h2 {
   color: white;
   font-size: 1em;
   min-width: 200px;
+  text-align: center;
+  text-align-last: center;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
 }
 
+.device-selector select option {
+  text-align: center;
+}
 
 .message {
-  margin-top: 25px;
+  margin: 25px auto;
   padding: 10px;
   border-radius: 5px;
   background-color: rgba(255, 255, 255, 0.1);
   color: #eee;
   min-height: 20px;
+  text-align: center;
+  max-width: 400px;
 }
 .warning-message {
     color: #f1c40f;
     background-color: rgba(241, 196, 15, 0.1);
     padding: 10px;
     border-radius: 5px;
-    margin-top: 15px;
+    margin: 15px auto;
+    text-align: center;
+    max-width: 400px;
 }
 
 footer {
@@ -250,4 +255,54 @@ footer {
   border-top: 1px solid #333;
   font-size: 0.9em;
   color: #aaa;
+  text-align: center;
+}
+
+footer p {
+  margin: 10px auto;
+  max-width: 400px;
+}
+
+@media (max-width: 480px) {
+  .container {
+    width: 95%;
+    padding: 15px;
+    margin: 10px;
+  }
+
+  .mood-buttons {
+    gap: 10px;
+    justify-content: center;
+  }
+
+  .mood-button {
+    min-width: 80px;
+    padding: 8px 16px;
+    font-size: 0.9em;
+    text-align: center;
+  }
+
+  .device-selector {
+    width: 100%;
+    padding: 0 10px;
+  }
+
+  .device-selector select {
+    width: 100%;
+    min-width: unset;
+  }
+
+  header h1 {
+    font-size: 1.5em;
+  }
+
+  .spotify-button {
+    padding: 10px 20px;
+    font-size: 14px;
+  }
+
+  .message, .warning-message {
+    width: 90%;
+    margin: 15px auto;
+  }
 }

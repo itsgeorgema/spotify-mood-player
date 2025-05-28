@@ -3,12 +3,12 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import PlayerPage from './pages/PlayerPage';
 import LoginSuccess from './pages/LoginSuccess'; 
+import MusicAnalysisLoading from './pages/MusicAnalysisLoading';
 import { SpotifyDevice } from './types';
 import { apiClient } from './api/client';
 import './App.css';
 
-// Helper function to determine the API endpoint base
-const getApiEndpoint = (pathStartingWithApi: string) => {
+export const getApiEndpoint = (pathStartingWithApi: string) => {
   if (import.meta.env.DEV) {
     // In development, use relative paths for the Vite proxy.
     return pathStartingWithApi;
@@ -20,7 +20,6 @@ const getApiEndpoint = (pathStartingWithApi: string) => {
     return `${import.meta.env.VITE_BACKEND_API_URL}${pathStartingWithApi}`;
   }
 };
-
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -37,13 +36,6 @@ function App() {
         credentials: 'include'
       });
       const data = await response.json();
-      if(data.isAuthenticated){
-        //if user is authenticated, conduct sentiment analysis on the saved songs and sort it in to csv
-        //fetch app route, maybe new app route called /api/sentiment_analysis
-        //want to do the sentiment analysis when user is authenticated, not when buttons are selected 
-        //so that the csv is already sorted when user selects a mood and you 
-        //dont have to sort every time a button is clicked
-      }
       setIsAuthenticated(data.isAuthenticated);
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -100,12 +92,74 @@ function App() {
     }
   };
 
-  const handleMoodSelect = async (mood: string) => {
-    setSelectedMood(mood);
-    // ... rest of your mood selection logic
-    //when mood is selected, route to backend for /api/mood-tracks and /api/play 
-    // in those app routes, get the csv file and then play a random song that matches the mood value
-  };
+const handleMoodSelect = async (mood: string) => {
+    if (!selectedDeviceId) {
+        setMessage('Please select a playback device first.');
+        return;
+    }
+
+    try {
+        // Only check session data, never reanalyze
+        const moodCheckResponse = await fetch(getApiEndpoint('/api/mood-tracks?mood=' + mood.toLowerCase()), {
+            credentials: 'include',
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+        });
+
+        const moodData = await moodCheckResponse.json();
+
+        // Handle case where analysis is not done yet
+        if (moodCheckResponse.status === 400 && moodData.error && moodData.error.includes('No analyzed tracks in session')) {
+            setMessage('Your music library is still being analyzed. Please wait a moment and try again.');
+            setSelectedMood(null);
+            return;
+        }
+
+        if (!moodCheckResponse.ok) {
+            throw new Error(moodData.error || 'Failed to check mood data');
+        }
+
+        // If no tracks for this mood, show message and return early
+        if (!moodData.track_uris || moodData.track_uris.length === 0) {
+            setMessage(`No ${mood} tracks found in your library. Try another mood.`);
+            setSelectedMood(null);
+            return;
+        }
+
+        // If we have tracks, proceed with playback
+        setIsLoading(true);
+        setSelectedMood(mood);
+        setMessage(`Loading ${mood} playlist...`);
+
+        const playResponse = await fetch(getApiEndpoint('/api/play'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                track_uris: moodData.track_uris,
+                device_id: selectedDeviceId
+            })
+        });
+
+        if (!playResponse.ok) {
+            const errorData = await playResponse.json();
+            throw new Error(errorData.error || 'Failed to play tracks');
+        }
+
+        setMessage(`Playing ${mood} music...`);
+
+    } catch (error) {
+        console.error('Error in handleMoodSelect:', error);
+        setMessage(error instanceof Error ? error.message : 'Failed to play tracks. Please try again.');
+        setSelectedMood(null);
+    } finally {
+        setIsLoading(false);
+    }
+};
 
   useEffect(() => {
     checkAuthStatus();
@@ -145,6 +199,7 @@ function App() {
           />
         } 
       />
+      <Route path="/analyzing" element={<MusicAnalysisLoading />} />
     </Routes>
   </Router>
 );}
