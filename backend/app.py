@@ -68,15 +68,12 @@ if 'SESSION_COOKIE_DOMAIN' in app.config: # Print domain only if explicitly set
 sys.stdout.flush()
 
 # CORS CONFIG
-frontend_url_from_env = os.getenv("FRONTEND_URL")
-
-if not frontend_url_from_env:
-    frontend_url_from_env = "http://127.0.0.1:5173"
-allowed_origins = [frontend_url_from_env]
+frontend_url_from_env = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
+allowed_origins = [frontend_url_from_env, "https://spotify-mood-player.vercel.app"]
 
 CORS(app, 
      resources={r"/api/*": {
-         "origins": [os.getenv("FRONTEND_URL")],
+         "origins": allowed_origins,
          "supports_credentials": True,
          "expose_headers": ["Set-Cookie", "Authorization"],
          "allow_headers": ["Content-Type", "Authorization"],
