@@ -1,4 +1,4 @@
-from db import get_db_connection
+from backend.db import get_db_connection
 import logging
 
 logger = logging.getLogger(__name__)
