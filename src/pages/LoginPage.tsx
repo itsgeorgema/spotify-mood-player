@@ -1,5 +1,6 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
+import MusicAnalysisLoading from './MusicAnalysisLoading';
 
 interface LoginPageProps {
   isAuthenticated: boolean;
@@ -9,7 +10,7 @@ interface LoginPageProps {
 
 function LoginPage({ isAuthenticated, handleLogin, isLoading }: LoginPageProps) {
   if (isLoading) {
-    return <div className="container">Checking authentication...</div>;
+    return <MusicAnalysisLoading />;
   }
 
   if (isAuthenticated) {

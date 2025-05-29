@@ -98,6 +98,8 @@ const handleMoodSelect = async (mood: string) => {
         return;
     }
 
+    setSelectedMood(mood);
+
     try {
         // Only check session data, never reanalyze
         const moodCheckResponse = await fetch(getApiEndpoint('/api/mood-tracks?mood=' + mood.toLowerCase()), {
@@ -130,7 +132,6 @@ const handleMoodSelect = async (mood: string) => {
 
         // If we have tracks, proceed with playback
         setIsLoading(true);
-        setSelectedMood(mood);
         setMessage(`Loading ${mood} playlist...`);
 
         const playResponse = await fetch(getApiEndpoint('/api/play'), {

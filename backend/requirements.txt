@@ -9,3 +9,4 @@ lyricsgenius
 librosa
 numpy
 pydub
+mysql-connector-python

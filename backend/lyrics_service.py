@@ -104,20 +104,29 @@ def analyze_user_library(sp, session=None):
             itunes_preview_url = get_itunes_preview(track['name'], track['artist'])
             if itunes_preview_url:
                 wav_path = download_and_convert_preview(itunes_preview_url)
-                audio_features = {'tempo': 0, 'energy': 0}
+                audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
                 if wav_path:
                     try:
                         y, sr = librosa.load(wav_path, sr=None)
                         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
                         energy = float(np.mean(librosa.feature.rms(y=y)))
-                        audio_features = {'tempo': tempo, 'energy': energy}
+                        brightness = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
+                        zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
+                        contrast = float(np.mean(librosa.feature.spectral_contrast(y=y, sr=sr)))
+                        audio_features = {
+                            'tempo': tempo,
+                            'energy': energy,
+                            'brightness': brightness,
+                            'zcr': zcr,
+                            'contrast': contrast
+                        }
                     except Exception as e:
                         print(f"Error analyzing audio features: {e}")
                     finally:
                         if os.path.exists(wav_path):
                             os.remove(wav_path)
             else:
-                audio_features = {'tempo': 0, 'energy': 0}
+                audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
             lyrics = None
             sentiment = 0
             if genius:
@@ -130,14 +139,20 @@ def analyze_user_library(sp, session=None):
                 sentiment = analyze_lyrics_sentiment(lyrics)
             track.update(audio_features)
             track['sentiment'] = sentiment
-            track['mood'] = categorize_mood(audio_features['tempo'], audio_features['energy'], sentiment)
+            track['moods'] = categorize_mood(
+                tempo=audio_features['tempo'],
+                energy=audio_features['energy'],
+                brightness=audio_features['brightness'],
+                zcr=audio_features['zcr'],
+                contrast=audio_features['contrast'],
+                sentiment=sentiment
+            )
             analyzed_tracks.append(track)
         # Build mood->uris dict, limit to 100 per mood
         mood_uris = {}
         for track in analyzed_tracks:
-            mood = track['mood']
-            uri = track['uri']
-            mood_uris.setdefault(mood, []).append(uri)
+            for mood in track['moods']:
+                mood_uris.setdefault(mood, []).append(track['uri'])
         for mood in mood_uris:
             if len(mood_uris[mood]) > 100:
                 mood_uris[mood] = random.sample(mood_uris[mood], 100)
@@ -146,49 +161,44 @@ def analyze_user_library(sp, session=None):
         if session is not None:
             session['mood_uris'] = mood_uris
             session.modified = True
-        return mood_uris
+        # Return both for compatibility
+        return analyzed_tracks, mood_uris
     except Exception as e:
         print(f"Error in analyze_user_library: {e}")
         import traceback; traceback.print_exc()
-        return {}  # Return empty dict
+        return [], {}  # Return empty dict
 
-def categorize_mood(tempo, energy, sentiment):
-    """
-    Weighted mood categorization using both audio features and lyrics sentiment.
-    - tempo: Beats per minute
-    - energy: Intensity and activity (0.0 to 1.0)
-    - sentiment: Sentiment score (-1.0 to 1.0)
-    """
-    # Weighted score: 60% lyrics sentiment, 40% audio features
-    mood_score = 0.6 * sentiment + 0.2 * (energy * 2 - 1) + 0.2 * ((tempo - 90) / 60)
-    # Clamp mood_score to [-1, 1]
-    mood_score = max(-1, min(1, mood_score))
-    # Mood logic
-    if mood_score > 0.5:
-        return "happy"
-    if mood_score < -0.5:
-        return "sad"
-    if energy > 0.08 and tempo > 120:
-        return "energetic"
-    if energy < 0.05 and tempo < 90 and sentiment > -0.2:
-        return "calm"
-    if sentiment < -0.3 and energy > 0.06:
-        return "mad"
-    if sentiment > 0.3 and tempo < 110 and energy < 0.06:
-        return "romantic"
-    if 90 <= tempo <= 110 and 0.04 <= energy <= 0.07 and -0.2 < sentiment < 0.2:
-        return "focused"
-    if 90 <= tempo <= 110 and energy < 0.04 and -0.3 < sentiment < 0.1:
-        return "mysterious"
-    if tempo > 120:
-        return "energetic"
-    if tempo < 90:
-        return "calm"
-    if sentiment > 0.1:
-        return "happy"
-    if sentiment < -0.1:
-        return "sad"
-    return "happy"
+def categorize_mood(tempo, energy, brightness, zcr, contrast, sentiment):
+    moods = []
+    if sentiment > 0.5 and brightness > 3000:
+        moods.append("happy")
+    if sentiment < -0.4 and brightness < 2000:
+        moods.append("sad")
+    if energy > 0.08 and tempo > 120 and zcr > 0.1:
+        moods.append("energetic")
+    if energy < 0.05 and tempo < 90 and zcr < 0.05 and contrast < 20:
+        moods.append("calm")
+    if sentiment < -0.3 and energy > 0.06 and zcr > 0.08:
+        moods.append("mad")
+    if sentiment > 0.3 and 90 < tempo < 110 and brightness > 2500 and zcr < 0.07:
+        moods.append("romantic")
+    if 90 <= tempo <= 110 and 0.04 <= energy <= 0.07 and -0.2 < sentiment < 0.2 and contrast < 25 and zcr < 0.07:
+        moods.append("focused")
+    if 90 <= tempo <= 110 and brightness < 2000 and contrast > 25 and -0.3 < sentiment < 0.1:
+        moods.append("mysterious")
+    # fallback: if no moods matched, assign the most likely
+    if not moods:
+        if tempo > 120:
+            moods.append("energetic")
+        elif tempo < 90:
+            moods.append("calm")
+        elif sentiment > 0.1:
+            moods.append("happy")
+        elif sentiment < -0.1:
+            moods.append("sad")
+        else:
+            moods.append("happy")
+    return moods
 
 def get_tracks_for_mood(mood_uris, mood, limit=20):
     """Get up to 'limit' URIs for a mood from the session dict."""
