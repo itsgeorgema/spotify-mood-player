@@ -45,4 +45,5 @@ def run_migrations():
             conn.close()
 
 if __name__ == "__main__":
-    run_migrations() 
+    run_migrations()
+    print("Migrations script finished.") 
