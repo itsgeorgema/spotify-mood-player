@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  envDir: 'src', // Load .env from src/
   server: {
     host: '127.0.0.1', // Explicitly tell Vite to use 127.0.0.1
     port: 5173,        // Your desired frontend port (matches your FRONTEND_URL)

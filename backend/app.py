@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 import os
 import sys # For flushing output
 import traceback
@@ -7,28 +8,23 @@ from flask_cors import CORS
 import time
 from lyrics_service import analyze_user_library, get_tracks_for_mood
 import spotify_service
+from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection
+import logging
 
-# Attempt to load dotenv and check its status
-try:
-    from dotenv import load_dotenv
-    print("--- python-dotenv module found. Attempting to load .env file... ---")
-    if os.path.exists('.env'):
-        print("--- .env file found in backend directory. ---")
-        load_success = load_dotenv()
-        if load_success:
-            print("--- .env file loaded successfully. ---")
-        else:
-            print("--- WARNING: load_dotenv() called but reported no variables loaded. Check .env content or permissions. ---")
-    else:
-        print("--- WARNING: .env file not found in backend directory. Relying on system environment variables for production. ---")
-except ImportError:
-    print("--- WARNING: python-dotenv module not found. pip install python-dotenv if you are using a .env file for local dev. ---")
-    print("--- Relying on system environment variables. ---")
-sys.stdout.flush()
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO if os.getenv('FLASK_ENV') == 'production' else logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load .env from the root directory
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
+
+# No dotenv loading here; all env vars come from Docker Compose
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
-print(f"SECRET KEY IS THIS: {app.secret_key}")
 
 # --- Environment-Specific Configuration ---
 IS_PRODUCTION = os.getenv('FLASK_ENV') == 'production'
@@ -80,7 +76,7 @@ allowed_origins = [frontend_url_from_env]
 
 CORS(app, 
      resources={r"/api/*": {
-         "origins": [frontend_url_from_env],
+         "origins": [os.getenv("FRONTEND_URL")],
          "supports_credentials": True,
          "expose_headers": ["Set-Cookie", "Authorization"],
          "allow_headers": ["Content-Type", "Authorization"],
@@ -96,7 +92,6 @@ def login():
     try:
         auth_manager = spotify_service.create_spotify_oauth()
         auth_url = auth_manager.get_authorize_url()
-        print(f"--- Generated Spotify auth URL with client_id: {os.getenv('SPOTIPY_CLIENT_ID')} ---")
         print(f"--- Redirect URI set to: {os.getenv('SPOTIPY_REDIRECT_URI')} ---")
         sys.stdout.flush()
         return redirect(auth_url)
@@ -124,18 +119,12 @@ def spotify_callback():
         # Exchange authorization code for tokens
         token_info = auth_manager.get_access_token(code)
 
-        print(f"--- CALLBACK DEBUG: Token info after get_access_token: {token_info} ---")
-        sys.stdout.flush()
+        print("--- Token stored in session successfully ---")
         
         # Store tokens in session with explicit session configuration
         session.permanent = True  # Make the session permanent
         session['spotify_token_info'] = token_info
         session.modified = True
-        
-        print("--- Token stored in session successfully ---")
-        print(f"--- Token info: {token_info} ---")
-        print(f"--- Full session content: {dict(session)} ---")
-        sys.stdout.flush()
         
         # Set explicit cookie parameters
         response = redirect(f"{frontend_url_from_env}/callback?login_success=true")
@@ -171,6 +160,18 @@ def check_auth_status():
 def spotify_logout():
     print("--- /api/logout route hit ---")
     sys.stdout.flush()
+    from db import delete_tracks_for_user
+    sp = spotify_service.get_spotify_client_from_session()
+    if sp:
+        try:
+            user_profile = sp.current_user()
+            if user_profile:
+                spotify_id = user_profile['id']
+                user_id = get_or_create_user(spotify_id)
+                delete_tracks_for_user(user_id)
+                print(f"--- Deleted tracks for user {user_id} on logout ---")
+        except Exception as e:
+            print(f"--- Error deleting tracks on logout: {e} ---")
     session.pop('spotify_token_info', None)
     session.modified = True 
     print("--- User logged out, token removed from session. ---")
@@ -188,28 +189,40 @@ def sentiment_analysis_route():
         sys.stdout.flush()
         return jsonify({"error": "User not authenticated or token expired. Please login."}), 401
 
-    # Check if we already have mood data
-    existing_mood_uris = session.get('mood_uris')
-    if existing_mood_uris and any(existing_mood_uris.values()):
-        print("--- Using existing mood analysis ---")
+    user_profile = sp.current_user()
+    if not user_profile:
+        return jsonify({"error": "Could not fetch user profile from Spotify."}), 401
+    spotify_id = user_profile['id']
+    user_id = get_or_create_user(spotify_id)
+
+    # Check if we already have mood data for this user
+    existing_tracks = get_tracks_by_mood(user_id, 'happy', limit=1)
+    if existing_tracks:
+        print("--- Using existing mood analysis from DB ---")
+        # Get all moods available for this user
+        moods = set()
+        for mood in ['happy','sad','energetic','calm','mad','romantic','focused','mysterious']:
+            if get_tracks_by_mood(user_id, mood, limit=1):
+                moods.add(mood)
         return jsonify({
             "message": "Using existing analysis",
-            "available_moods": list(existing_mood_uris.keys())
+            "available_moods": list(moods)
         }), 200
 
     try:
-        # Analyze user's library and get mood->uris dict
-        mood_uris = analyze_user_library(sp)
-        if not mood_uris:
-            print("--- No tracks analyzed ---")
-            return jsonify({"error": "No tracks found to analyze"}), 404
+        # Analyze user's library and get list of tracks with moods
+        analyzed_tracks, mood_uris = analyze_user_library(sp)
+        # analyzed_tracks is a list of dicts with 'uri' and 'mood'
+        insert_tracks(user_id, analyzed_tracks)
+        moods = set(track['mood'] for track in analyzed_tracks)
+        print(f"--- Analyzed and stored moods in DB: {list(moods)} ---")
+        sys.stdout.flush()
+        # Optionally store mood_uris in session for frontend
         session['mood_uris'] = mood_uris
         session.modified = True
-        print(f"--- Analyzed and stored moods: {list(mood_uris.keys())} ---")
-        sys.stdout.flush()
         return jsonify({
             "message": "Library analyzed successfully",
-            "available_moods": list(mood_uris.keys())
+            "available_moods": list(moods)
         }), 200
     except Exception as e:
         print(f"--- Error in sentiment analysis: {e} ---")
@@ -260,11 +273,12 @@ def get_mood_tracks_route():
     mood = request.args.get('mood')
     if not mood:
         return jsonify({"error": "No mood specified"}), 400
-    mood_uris = session.get('mood_uris')
-    if not mood_uris:
-        print("--- No analyzed tracks in session. Please analyze your library first. ---")
-        return jsonify({"error": "No analyzed tracks in session. Please analyze your library first."}), 400
-    track_uris = get_tracks_for_mood(mood_uris, mood)
+    user_profile = sp.current_user()
+    if not user_profile:
+        return jsonify({"error": "Could not fetch user profile from Spotify."}), 401
+    spotify_id = user_profile['id']
+    user_id = get_or_create_user(spotify_id)
+    track_uris = get_tracks_by_mood(user_id, mood)
     if not track_uris:
         print(f"--- No tracks found for mood: {mood} ---")
         return jsonify({"track_uris": []}), 200  # Return empty array instead of error
@@ -342,9 +356,14 @@ def get_devices_route():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    print("--- /api/health route hit ---")
-    sys.stdout.flush()
-    return jsonify({"status": "healthy", "message": "Backend is running!"}), 200
+    try:
+        # Check database connection
+        conn = get_db_connection()
+        conn.close()
+        return jsonify({"status": "healthy", "database": "connected"}), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
 if __name__ == '__main__':
     # For local development, app.run will use the port from SERVER_NAME or default

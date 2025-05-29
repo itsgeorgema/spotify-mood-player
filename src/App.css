@@ -105,11 +105,18 @@ main h2 {
 }
 
 .mood-button:hover {
-  opacity: 0.8;
+  opacity: 0.9;
+}
+
+.mood-button:not(.selected) {
+  opacity: .9;
+  filter: brightness(.9);
 }
 
 .mood-button.selected {
   border-color: #1DB954;
+  opacity: 1;
+  filter: brightness(1.1);
 }
 
 .mood-button.selected .button-text {
