@@ -54,9 +54,12 @@ if training_data:
     naive_bayes_clf.fit(training_data)
 
 def create_genius_client():
-    """Create a Genius client with proper SSL configuration, retries, and custom User-Agent"""
+    token = os.getenv('GENIUS_ACCESS_TOKEN')
+    if token:
+        print(f"[DEBUG] create_genius_client called. GENIUS_ACCESS_TOKEN={token[:5]}...{token[-5:]}")
+    else:
+        print(f"[DEBUG] create_genius_client called. GENIUS_ACCESS_TOKEN=None")
     try:
-        token = os.getenv('GENIUS_ACCESS_TOKEN')
         if not token:
             print("WARNING: GENIUS_ACCESS_TOKEN is not set")
             return None
@@ -318,8 +321,8 @@ def analyze_user_library(sp, session=None):
     
     try:
         offset = 0
-        limit = 5  # Reduced batch size further
-        max_workers = min(4, (os.cpu_count() or 1))  # Reduced max workers further
+        limit = 20  # Restore batch size to 20 for faster processing
+        max_workers = min(20, (os.cpu_count() or 1) * 2)  # Use up to 20 workers for max parallelism
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             while True:
@@ -362,9 +365,7 @@ def analyze_user_library(sp, session=None):
                 if len(batch_tracks) < limit:
                     break
                 
-                # Increased delay between batches
-                print("Waiting 10 seconds before next batch...")
-                time.sleep(10)  # Increased from 2 to 10 seconds
+                time.sleep(1)  
         
         # Build mood->uris dict, limit to 100 per mood
         mood_uris = {}

@@ -13,6 +13,7 @@ primary_region = 'sjc'
   FLASK_ENV = 'production'
   PORT = '8080'
   GENIUS_ACCESS_TOKEN = '${GENIUS_ACCESS_TOKEN}'
+  GEVENT_NOWAIT_AFTER_FORK = '1'
 
 [http_service]
   internal_port = 8080
