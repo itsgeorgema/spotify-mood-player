@@ -362,6 +362,15 @@ def health_check():
         logger.error(f"Health check failed: {str(e)}")
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
+@app.after_request
+def add_cors_headers(response):
+    frontend_url = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
+    response.headers['Access-Control-Allow-Origin'] = frontend_url
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,cache-control'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
+    return response
+
 if __name__ == '__main__':
     # For local development, app.run will use the port from SERVER_NAME or default
     if not IS_PRODUCTION:
