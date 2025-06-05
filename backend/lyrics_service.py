@@ -243,18 +243,24 @@ def analyze_track(track, genius):
 
         if genius:
             try:
+                print(f"Attempting to fetch lyrics for '{track['name']}' by '{track['artist']}'")
                 song = genius.search_song(track['name'], track['artist'])
-                lyrics = song.lyrics if song else None
-                if lyrics:
-                    print(f"Fetched lyrics for {track['name']}")
+                if song:
+                    lyrics = song.lyrics
+                    print(f"Successfully fetched lyrics for {track['name']}")
                 else:
-                    print(f"No lyrics found for {track['name']}")
+                    print(f"No lyrics found for {track['name']} - API returned no results")
             except Exception as e:
-                print(f"Error fetching lyrics for '{track['name']}' by '{track['artist']}': {e}")
+                print(f"Error fetching lyrics for '{track['name']}' by '{track['artist']}':")
+                print(f"Error type: {type(e).__name__}")
+                print(f"Error message: {str(e)}")
+                if isinstance(e, requests.exceptions.RequestException) and hasattr(e, 'response') and e.response is not None:
+                    print(f"Response status code: {e.response.status_code}")
+                    print(f"Response headers: {e.response.headers}")
+                    print(f"Response body: {e.response.text}")
                 import traceback
                 print("Full error traceback:")
                 print(traceback.format_exc())
-                raise  # Re-raise the exception to see the full error
             time.sleep(2)  # Rate limiting
 
         if lyrics:
