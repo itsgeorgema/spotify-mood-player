@@ -80,84 +80,100 @@ def analyze_user_library(sp, session=None):
     genius = create_genius_client()
     try:
         offset = 0
-        limit = 20
+        limit = 10  # Reduce batch size for lower memory usage
+        analyzed_tracks = []
         while True:
             results = sp.current_user_saved_tracks(limit=limit, offset=offset)
             if not results['items']:
                 break
+            batch_tracks = []
             for item in results['items']:
                 track = item['track']
                 if track:
-                    tracks.append({
+                    batch_tracks.append({
                         'id': track['id'],
                         'name': track['name'],
                         'artist': track['artists'][0]['name'],
                         'uri': track['uri']
                     })
-            offset += limit
-            if len(results['items']) < limit:
-                break
-        print(f"Fetched {len(tracks)} tracks from library")
-        analyzed_tracks = []
-        for track in tracks:
-            print(f"Analyzing track: {track['name']} by {track['artist']}")
-            # Always try iTunes for preview
-            itunes_preview_url = get_itunes_preview(track['name'], track['artist'])
-            if itunes_preview_url:
-                print(f"Found iTunes preview for {track['name']}: {itunes_preview_url}")
-                wav_path = download_and_convert_preview(itunes_preview_url)
+            print(f"Fetched {len(batch_tracks)} tracks in batch (offset {offset})")
+            # Analyze each track in the batch and release memory after each
+            for track in batch_tracks:
+                print(f"Analyzing track: {track['name']} by {track['artist']}")
+                itunes_preview_url = get_itunes_preview(track['name'], track['artist'])
                 audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
-                if wav_path:
+                wav_path = None
+                y = None
+                sr = None
+                song = None
+                if itunes_preview_url:
+                    print(f"Found iTunes preview for {track['name']}: {itunes_preview_url}")
+                    wav_path = download_and_convert_preview(itunes_preview_url)
+                    if wav_path:
+                        try:
+                            y, sr = librosa.load(wav_path, sr=None)
+                            tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+                            energy = float(np.mean(librosa.feature.rms(y=y)))
+                            brightness = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
+                            zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
+                            contrast = float(np.mean(librosa.feature.spectral_contrast(y=y, sr=sr)))
+                            audio_features = {
+                                'tempo': tempo,
+                                'energy': energy,
+                                'brightness': brightness,
+                                'zcr': zcr,
+                                'contrast': contrast
+                            }
+                            print(f"Audio features for {track['name']}: {audio_features}")
+                        except Exception as e:
+                            print(f"Error analyzing audio features for {track['name']}: {e}")
+                        finally:
+                            if wav_path and os.path.exists(wav_path):
+                                os.remove(wav_path)
+                            # Explicitly release memory for large objects
+                            del wav_path
+                            if y is not None:
+                                del y
+                            if sr is not None:
+                                del sr
+                else:
+                    print(f"No iTunes preview found for {track['name']}")
+                lyrics = None
+                sentiment = 0
+                if genius:
                     try:
-                        y, sr = librosa.load(wav_path, sr=None)
-                        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-                        energy = float(np.mean(librosa.feature.rms(y=y)))
-                        brightness = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
-                        zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
-                        contrast = float(np.mean(librosa.feature.spectral_contrast(y=y, sr=sr)))
-                        audio_features = {
-                            'tempo': tempo,
-                            'energy': energy,
-                            'brightness': brightness,
-                            'zcr': zcr,
-                            'contrast': contrast
-                        }
-                        print(f"Audio features for {track['name']}: {audio_features}")
+                        song = genius.search_song(track['name'], track['artist'])
+                        lyrics = song.lyrics if song else None
+                        if lyrics:
+                            print(f"Fetched lyrics for {track['name']}")
+                        else:
+                            print(f"No lyrics found for {track['name']}")
                     except Exception as e:
-                        print(f"Error analyzing audio features for {track['name']}: {e}")
-                    finally:
-                        if os.path.exists(wav_path):
-                            os.remove(wav_path)
-            else:
-                print(f"No iTunes preview found for {track['name']}")
-                audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
-            lyrics = None
-            sentiment = 0
-            if genius:
-                try:
-                    song = genius.search_song(track['name'], track['artist'])
-                    lyrics = song.lyrics if song else None
-                    if lyrics:
-                        print(f"Fetched lyrics for {track['name']}")
-                    else:
-                        print(f"No lyrics found for {track['name']}")
-                except Exception as e:
-                    print(f"Error fetching lyrics for {track['name']}: {e}")
-            if lyrics:
-                sentiment = analyze_lyrics_sentiment(lyrics)
-                print(f"Sentiment for {track['name']}: {sentiment}")
-            track.update(audio_features)
-            track['sentiment'] = sentiment
-            track['moods'] = categorize_mood(
-                tempo=audio_features['tempo'],
-                energy=audio_features['energy'],
-                brightness=audio_features['brightness'],
-                zcr=audio_features['zcr'],
-                contrast=audio_features['contrast'],
-                sentiment=sentiment
-            )
-            print(f"Moods for {track['name']}: {track['moods']}")
-            analyzed_tracks.append(track)
+                        print(f"Error fetching lyrics for {track['name']}: {e}")
+                if lyrics:
+                    sentiment = analyze_lyrics_sentiment(lyrics)
+                    print(f"Sentiment for {track['name']}: {sentiment}")
+                track.update(audio_features)
+                track['sentiment'] = sentiment
+                track['moods'] = categorize_mood(
+                    tempo=audio_features['tempo'],
+                    energy=audio_features['energy'],
+                    brightness=audio_features['brightness'],
+                    zcr=audio_features['zcr'],
+                    contrast=audio_features['contrast'],
+                    sentiment=sentiment
+                )
+                print(f"Moods for {track['name']}: {track['moods']}")
+                analyzed_tracks.append(track)
+                # Explicitly release memory for lyrics and song
+                del lyrics
+                if song is not None:
+                    del song
+            offset += limit
+            if len(batch_tracks) < limit:
+                break
+            # Explicitly release memory for batch_tracks
+            del batch_tracks
         # Build mood->uris dict, limit to 100 per mood
         mood_uris = {}
         for track in analyzed_tracks:
