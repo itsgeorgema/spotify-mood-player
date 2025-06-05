@@ -39,3 +39,6 @@ primary_region = 'sjc'
   memory = '4gb'
   cpu_kind = 'shared'
   cpus = 2
+
+[processes]
+  app = "gunicorn --preload --worker-class gevent --workers 4 --bind 0.0.0.0:8080 app:app"
