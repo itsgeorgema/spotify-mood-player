@@ -67,16 +67,21 @@ def create_genius_client():
             verbose=False,
             remove_section_headers=True,
             timeout=30,  # Increased timeout
-            retries=5,   # Increased retries
-            sleep_time=2  # Add sleep time between retries
+            retries=10,   # Increased retries
+            sleep_time=5  # Increased sleep time between retries
         )
         # Set a more realistic User-Agent
         genius.session.headers.update({  # type: ignore[attr-defined]
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
             'Origin': 'https://genius.com',
-            'Referer': 'https://genius.com/'
+            'Referer': 'https://genius.com/',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin'
         })
         return genius
     except Exception as e:
@@ -224,6 +229,7 @@ def analyze_track(track, genius):
                     print(f"Audio features for {track['name']}: {audio_features}")
                 except Exception as e:
                     print(f"Error analyzing audio features for {track['name']}: {e}")
+                    raise  # Re-raise the exception to see the full error
                 finally:
                     if wav_path and os.path.exists(wav_path):
                         os.remove(wav_path)
@@ -245,8 +251,11 @@ def analyze_track(track, genius):
                     print(f"No lyrics found for {track['name']}")
             except Exception as e:
                 print(f"Error fetching lyrics for '{track['name']}' by '{track['artist']}': {e}")
-                import traceback; traceback.print_exc()
-            time.sleep(1)  # Rate limiting
+                import traceback
+                print("Full error traceback:")
+                print(traceback.format_exc())
+                raise  # Re-raise the exception to see the full error
+            time.sleep(2)  # Rate limiting
 
         if lyrics:
             sentiment = analyze_lyrics_sentiment(lyrics)
@@ -268,7 +277,10 @@ def analyze_track(track, genius):
 
     except Exception as e:
         print(f"Error analyzing track {track['name']}: {e}")
-        return None
+        import traceback
+        print("Full error traceback:")
+        print(traceback.format_exc())
+        raise  # Re-raise the exception to see the full error
     finally:
         # Cleanup
         if lyrics:
@@ -284,8 +296,8 @@ def analyze_user_library(sp, session=None):
     
     try:
         offset = 0
-        limit = 10  # Reduced batch size to avoid rate limits
-        max_workers = min(8, (os.cpu_count() or 1) * 2)  # Reduced max workers
+        limit = 5  # Reduced batch size further
+        max_workers = min(4, (os.cpu_count() or 1))  # Reduced max workers further
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             while True:
@@ -327,7 +339,7 @@ def analyze_user_library(sp, session=None):
                     break
                 
                 # Increased delay between batches
-                time.sleep(2)
+                time.sleep(10)  # Increased from 2 to 10 seconds
         
         # Build mood->uris dict, limit to 100 per mood
         mood_uris = {}
