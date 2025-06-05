@@ -76,7 +76,7 @@ CORS(app,
          "origins": allowed_origins,
          "supports_credentials": True,
          "expose_headers": ["Set-Cookie", "Authorization"],
-         "allow_headers": ["Content-Type", "Authorization"],
+         "allow_headers": ["Content-Type", "Authorization", "cache-control"],
          "methods": ["GET", "POST", "OPTIONS"]
      }},
      supports_credentials=True)
