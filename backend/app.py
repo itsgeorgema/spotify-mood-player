@@ -209,10 +209,12 @@ def sentiment_analysis_route():
     try:
         # Analyze user's library and get list of tracks with moods
         analyzed_tracks, mood_uris = analyze_user_library(sp)
-        # analyzed_tracks is a list of dicts with 'uri' and 'mood'
+        # analyzed_tracks is a list of dicts with 'uri' and 'moods' (list)
         insert_tracks(user_id, analyzed_tracks)
-        moods = set(track['mood'] for track in analyzed_tracks)
+        moods = set(mood for track in analyzed_tracks for mood in track.get('moods', []))
         print(f"--- Analyzed and stored moods in DB: {list(moods)} ---")
+        logger.info(f"Analyzed tracks: {analyzed_tracks}")
+        logger.info(f"Mood URIs: {mood_uris}")
         sys.stdout.flush()
         # Optionally store mood_uris in session for frontend
         session['mood_uris'] = mood_uris
@@ -223,6 +225,7 @@ def sentiment_analysis_route():
         }), 200
     except Exception as e:
         print(f"--- Error in sentiment analysis: {e} ---")
+        logger.error(f"Error in sentiment analysis: {e}")
         traceback.print_exc()
         sys.stdout.flush()
         return jsonify({"error": "Failed to analyze library"}), 500
