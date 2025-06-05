@@ -15,13 +15,12 @@ services:
 
   backend:
     build: ./backend
-    command: python app.py
     env_file:
       - ./.env
     depends_on:
       - mysql
     ports:
-      - "5001:5001"
+      - "5001:8080"
     volumes:
       - ./backend:/app
 

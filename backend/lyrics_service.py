@@ -100,9 +100,11 @@ def analyze_user_library(sp, session=None):
         print(f"Fetched {len(tracks)} tracks from library")
         analyzed_tracks = []
         for track in tracks:
+            print(f"Analyzing track: {track['name']} by {track['artist']}")
             # Always try iTunes for preview
             itunes_preview_url = get_itunes_preview(track['name'], track['artist'])
             if itunes_preview_url:
+                print(f"Found iTunes preview for {track['name']}: {itunes_preview_url}")
                 wav_path = download_and_convert_preview(itunes_preview_url)
                 audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
                 if wav_path:
@@ -120,12 +122,14 @@ def analyze_user_library(sp, session=None):
                             'zcr': zcr,
                             'contrast': contrast
                         }
+                        print(f"Audio features for {track['name']}: {audio_features}")
                     except Exception as e:
-                        print(f"Error analyzing audio features: {e}")
+                        print(f"Error analyzing audio features for {track['name']}: {e}")
                     finally:
                         if os.path.exists(wav_path):
                             os.remove(wav_path)
             else:
+                print(f"No iTunes preview found for {track['name']}")
                 audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
             lyrics = None
             sentiment = 0
@@ -133,10 +137,15 @@ def analyze_user_library(sp, session=None):
                 try:
                     song = genius.search_song(track['name'], track['artist'])
                     lyrics = song.lyrics if song else None
+                    if lyrics:
+                        print(f"Fetched lyrics for {track['name']}")
+                    else:
+                        print(f"No lyrics found for {track['name']}")
                 except Exception as e:
-                    print(f"Error fetching lyrics: {e}")
+                    print(f"Error fetching lyrics for {track['name']}: {e}")
             if lyrics:
                 sentiment = analyze_lyrics_sentiment(lyrics)
+                print(f"Sentiment for {track['name']}: {sentiment}")
             track.update(audio_features)
             track['sentiment'] = sentiment
             track['moods'] = categorize_mood(
@@ -147,6 +156,7 @@ def analyze_user_library(sp, session=None):
                 contrast=audio_features['contrast'],
                 sentiment=sentiment
             )
+            print(f"Moods for {track['name']}: {track['moods']}")
             analyzed_tracks.append(track)
         # Build mood->uris dict, limit to 100 per mood
         mood_uris = {}
