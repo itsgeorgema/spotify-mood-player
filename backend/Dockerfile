@@ -29,4 +29,4 @@ RUN python -m nltk.downloader vader_lexicon
 # Run app.py when the container launches using Gunicorn
 # Gunicorn is a production-ready WSGI HTTP server for UNIX.
 # We point it to the 'app' Flask instance within your 'app.py' file.
-CMD ["gunicorn", "--timeout", "120", "--bind", "0.0.0.0:8080", "app:app"] 
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"] 
