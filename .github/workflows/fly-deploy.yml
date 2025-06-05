@@ -1,29 +1,25 @@
-
-name: Fly Deploy Backend
+name: Deploy Backend to Fly
 
 on:
   push:
-    branches:
-      - main  
     paths:
-      - 'backend/**' # Only run on changes in the backend directory
-      - 'Dockerfile'   
-      - 'fly.toml'     
-      - '.github/workflows/fly-deploy.yml' 
+      - 'backend/**'
+      - '!backend/README.md'
+  workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy Backend to Fly
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Set up Flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Install Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      - name: Deploy to Fly.io
+      - name: Deploy Backend to Fly.io
         run: flyctl deploy --remote-only
+        working-directory: backend
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
