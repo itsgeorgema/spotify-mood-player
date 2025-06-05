@@ -180,23 +180,31 @@ def analyze_user_library(sp, session=None):
 
 def categorize_mood(tempo, energy, brightness, zcr, contrast, sentiment):
     moods = []
-    if sentiment > 0.5 and brightness > 3000:
+    # Happy: very positive lyrics, bright, energetic
+    if sentiment > 0.5 and brightness > 2500 and energy > 0.07:
         moods.append("happy")
-    if sentiment < -0.4 and brightness < 2000:
+    # Sad: negative lyrics, low brightness, low energy
+    if sentiment < -0.3 and brightness < 2000 and energy < 0.06:
         moods.append("sad")
-    if energy > 0.08 and tempo > 120 and zcr > 0.1:
+    # Energetic: high tempo, high energy, high zcr
+    if tempo > 115 and energy > 0.08 and zcr > 0.09:
         moods.append("energetic")
-    if energy < 0.05 and tempo < 90 and zcr < 0.05 and contrast < 20:
+    # Calm: slow, low energy, low zcr, low contrast
+    if tempo < 90 and energy < 0.05 and zcr < 0.05 and contrast < 20:
         moods.append("calm")
-    if sentiment < -0.3 and energy > 0.06 and zcr > 0.08:
+    # Mad: negative lyrics, high energy, high zcr
+    if sentiment < -0.2 and energy > 0.07 and zcr > 0.08:
         moods.append("mad")
-    if sentiment > 0.3 and 90 < tempo < 110 and brightness > 2500 and zcr < 0.07:
+    # Romantic: positive lyrics, moderate tempo, bright, low zcr
+    if sentiment > 0.2 and 85 < tempo < 115 and brightness > 2200 and zcr < 0.07:
         moods.append("romantic")
-    if 90 <= tempo <= 110 and 0.04 <= energy <= 0.07 and -0.2 < sentiment < 0.2 and contrast < 25 and zcr < 0.07:
+    # Focused: neutral lyrics, moderate tempo, moderate energy, low zcr, low contrast
+    if 85 <= tempo <= 115 and 0.04 <= energy <= 0.07 and -0.2 < sentiment < 0.2 and contrast < 22 and zcr < 0.07:
         moods.append("focused")
-    if 90 <= tempo <= 110 and brightness < 2000 and contrast > 25 and -0.3 < sentiment < 0.1:
+    # Mysterious: moderate tempo, low brightness, high contrast, neutral/negative sentiment
+    if 80 <= tempo <= 120 and brightness < 1800 and contrast > 22 and -0.4 < sentiment < 0.2:
         moods.append("mysterious")
-    # fallback: if no moods matched, assign the most likely
+    # Fallbacks: assign most likely if nothing else matches
     if not moods:
         if tempo > 120:
             moods.append("energetic")
