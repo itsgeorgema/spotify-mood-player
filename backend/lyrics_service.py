@@ -62,15 +62,19 @@ def create_genius_client():
             return None
         print(f"Using Genius token: {token[:5]}...{token[-5:]}")  # Only log first/last 5 chars for security
         
+        print("Creating Genius client...")
         genius = Genius(
             token,
-            verbose=False,
+            verbose=True,  # Enable verbose mode to see API requests
             remove_section_headers=True,
             timeout=30,  # Increased timeout
             retries=10,   # Increased retries
             sleep_time=5  # Increased sleep time between retries
         )
+        print("Genius client created successfully")
+        
         # Set a more realistic User-Agent
+        print("Updating Genius client headers...")
         genius.session.headers.update({  # type: ignore[attr-defined]
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
@@ -83,6 +87,16 @@ def create_genius_client():
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Site': 'same-origin'
         })
+        print("Genius client headers updated")
+        
+        # Test the connection
+        print("Testing Genius API connection...")
+        test_song = genius.search_song("Test", "Test")
+        if test_song:
+            print("Genius API connection test successful")
+        else:
+            print("WARNING: Genius API connection test returned no results")
+        
         return genius
     except Exception as e:
         print(f"Error creating Genius client: {e}")
@@ -244,10 +258,16 @@ def analyze_track(track, genius):
         if genius:
             try:
                 print(f"Attempting to fetch lyrics for '{track['name']}' by '{track['artist']}'")
+                token = os.getenv('GENIUS_ACCESS_TOKEN')
+                if token:
+                    print(f"Using Genius token: {token[:5]}...{token[-5:]}")
+                else:
+                    print("WARNING: GENIUS_ACCESS_TOKEN is not set")
                 song = genius.search_song(track['name'], track['artist'])
                 if song:
                     lyrics = song.lyrics
                     print(f"Successfully fetched lyrics for {track['name']}")
+                    print(f"Lyrics length: {len(lyrics)} characters")
                 else:
                     print(f"No lyrics found for {track['name']} - API returned no results")
             except Exception as e:
@@ -297,7 +317,12 @@ def analyze_track(track, genius):
 def analyze_user_library(sp, session=None):
     """Analyze user's library using parallel processing."""
     print("Fetching user's library...")
+    print("Creating Genius client...")
     genius = create_genius_client()
+    if not genius:
+        print("WARNING: Failed to create Genius client - lyrics will not be fetched")
+    else:
+        print("Genius client created successfully")
     analyzed_tracks = []
     
     try:
@@ -337,14 +362,17 @@ def analyze_user_library(sp, session=None):
                         result = future.result()
                         if result:
                             analyzed_tracks.append(result)
+                            print(f"Successfully analyzed track: {track['name']}")
                     except Exception as e:
                         print(f"Error processing track {track['name']}: {e}")
+                        import traceback; traceback.print_exc()
                 
                 offset += limit
                 if len(batch_tracks) < limit:
                     break
                 
                 # Increased delay between batches
+                print("Waiting 10 seconds before next batch...")
                 time.sleep(10)  # Increased from 2 to 10 seconds
         
         # Build mood->uris dict, limit to 100 per mood
