@@ -88,15 +88,6 @@ def create_genius_client():
             'Sec-Fetch-Site': 'same-origin'
         })
         print("Genius client headers updated")
-        
-        # Test the connection
-        print("Testing Genius API connection...")
-        test_song = genius.search_song("Test", "Test")
-        if test_song:
-            print("Genius API connection test successful")
-        else:
-            print("WARNING: Genius API connection test returned no results")
-        
         return genius
     except Exception as e:
         print(f"Error creating Genius client: {e}")
