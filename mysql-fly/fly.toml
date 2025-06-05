@@ -9,15 +9,33 @@ primary_region = 'lax'
 [build]
   image = 'mysql:8'
 
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = 'stop'
-  auto_start_machines = true
-  min_machines_running = 0
-  processes = ['app']
+
 
 [[vm]]
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3306
+  
+  [[services.ports]]
+    port = 3306
+    handlers = ["tls"]
+
+[metrics]
+  port = 9091
+  path = "/metrics"
+
+[[mounts]]
+  source = "mysql_data"
+  destination = "/var/lib/mysql"
+
+[checks]
+  [checks.mysql]
+    port = 3306
+    type = "tcp"
+    interval = "15s"
+    timeout = "10s"
+    grace_period = "30s"
