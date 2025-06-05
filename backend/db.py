@@ -1,17 +1,45 @@
 from dotenv import load_dotenv
 import os
 import mysql.connector
+import time
+from mysql.connector import Error
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Load .env from the root directory
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
+def wait_for_db(max_retries=30, retry_interval=2):
+    """Wait for database to be ready with retries."""
+    retries = 0
+    while retries < max_retries:
+        try:
+            conn = get_db_connection()
+            conn.close()
+            logger.info("Database connection successful")
+            return True
+        except Error as e:
+            retries += 1
+            logger.warning(f"Database connection attempt {retries} failed: {e}")
+            if retries < max_retries:
+                time.sleep(retry_interval)
+    logger.error("Failed to connect to database after maximum retries")
+    return False
+
 def get_db_connection():
-    return mysql.connector.connect(
-        host=os.getenv('MYSQL_HOST'),
-        user=os.getenv('MYSQL_USER'),
-        password=os.getenv('MYSQL_PASSWORD'),
-        database=os.getenv('MYSQL_DATABASE')
-    )
+    """Get database connection with retry logic."""
+    try:
+        connection = mysql.connector.connect(
+            host=os.getenv('MYSQL_HOST', 'mysql'),
+            user=os.getenv('MYSQL_USER'),
+            password=os.getenv('MYSQL_PASSWORD'),
+            database=os.getenv('MYSQL_DATABASE')
+        )
+        return connection
+    except Error as e:
+        logger.error(f"Error connecting to MySQL: {e}")
+        raise
 
 def get_or_create_user(spotify_id):
     conn = get_db_connection()
