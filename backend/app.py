@@ -202,13 +202,16 @@ def sentiment_analysis_route():
             if get_tracks_by_mood(user_id, mood, limit=1):
                 moods.add(mood)
         return jsonify({
-            "message": "Using existing analysis",
+            "message": "Successfully analyzed and categorized your library",
             "available_moods": list(moods)
         }), 200
 
     try:
         # Analyze user's library and get list of tracks with moods
         analyzed_tracks, mood_uris = analyze_user_library(sp)
+        if not analyzed_tracks:
+            return jsonify({"error": "No tracks were analyzed"}), 500
+            
         # analyzed_tracks is a list of dicts with 'uri' and 'moods' (list)
         insert_tracks(user_id, analyzed_tracks)
         moods = set(mood for track in analyzed_tracks for mood in track.get('moods', []))
@@ -220,7 +223,7 @@ def sentiment_analysis_route():
         session['mood_uris'] = mood_uris
         session.modified = True
         return jsonify({
-            "message": "Library analyzed successfully",
+            "message": "Successfully analyzed and categorized your library",
             "available_moods": list(moods)
         }), 200
     except Exception as e:
@@ -242,7 +245,7 @@ def analyze_library_route():
         return jsonify({"error": "Not authenticated"}), 401
 
     try:
-        mood_uris = analyze_user_library(sp)
+        analyzed_tracks, mood_uris = analyze_user_library(sp)
         if not mood_uris:
             return jsonify({"error": "No tracks found"}), 404
 

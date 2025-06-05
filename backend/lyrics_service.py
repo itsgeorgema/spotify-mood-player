@@ -9,12 +9,52 @@ import tempfile
 from urllib.parse import quote
 from pydub import AudioSegment
 from nltk.sentiment import SentimentIntensityAnalyzer
+from naive_bayes import NaiveBayesMoodClassifier
+import time
+import csv
+import pathlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
 
 # Download required NLTK data
 nltk.download('vader_lexicon', quiet=True)
 
+def load_training_data():
+    """Load training data from CSV file."""
+    training_data = []
+    csv_path = pathlib.Path(__file__).parent / 'training_data.csv'
+    
+    try:
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # Split moods string into list and strip whitespace
+                moods = [mood.strip() for mood in row['moods'].split(',')]
+                training_data.append((row['lyrics'], moods))
+        print(f"Loaded {len(training_data)} training examples from CSV")
+        return training_data
+    except Exception as e:
+        print(f"Error loading training data: {e}")
+        # Return minimal training data as fallback
+        return [
+            ("I'm so happy", ["happy"]),
+            ("I'm so sad", ["sad"]),
+            ("I'm so energetic", ["energetic"]),
+            ("I'm so calm", ["calm"]),
+    ("I'm so mad", ["mad"]),
+            ("I'm so romantic", ["romantic"]),
+    ("I'm so focused", ["focused"]),
+            ("I'm so mysterious", ["mysterious"])
+] 
+
+# Load training data from CSV
+training_data = load_training_data()
+naive_bayes_clf = NaiveBayesMoodClassifier()
+if training_data:
+    naive_bayes_clf.fit(training_data)
+
 def create_genius_client():
-    """Create a Genius client with proper SSL configuration and retries"""
+    """Create a Genius client with proper SSL configuration, retries, and custom User-Agent"""
     try:
         genius = Genius(
             os.getenv('GENIUS_ACCESS_TOKEN'),
@@ -23,9 +63,15 @@ def create_genius_client():
             timeout=15,
             retries=3
         )
+        # Set a custom User-Agent to avoid being blocked as a bot, if possible
+        try:
+            genius.session.headers['User-Agent'] = 'Mozilla/5.0 (compatible; SpotifyMoodPlayer/1.0; +https://yourdomain.com)'  # type: ignore[attr-defined]
+        except Exception:
+            pass
         return genius
     except Exception as e:
         print(f"Error creating Genius client: {e}")
+        import traceback; traceback.print_exc()
         return None
 
 def download_and_convert_preview(preview_url):
@@ -73,152 +119,255 @@ def get_itunes_preview(track_name, artist_name):
         print(f"Error fetching iTunes preview: {e}")
     return None
 
+def bag_of_words_mood_boost(lyrics):
+    # Define keywords for each mood with expanded song-specific vocabulary
+    mood_keywords = {
+        'romantic': [
+            "love", "heart", "kiss", "baby", "darling", "sweet", "forever", "together", 
+            "soul", "passion", "desire", "romance", "beautiful", "perfect", "dream", 
+            "hold", "touch", "feel", "forever", "soulmate", "cherish", "adore", "belong"
+        ],
+        'mysterious': [
+            "night", "dark", "shadow", "secret", "mystery", "moon", "whisper", "silence",
+            "unknown", "hidden", "ghost", "haunt", "echo", "fog", "mist", "twilight",
+            "dusk", "dawn", "veil", "enigma", "puzzle", "riddle", "curse", "spell"
+        ],
+        'mad': [
+            "hate", "anger", "rage", "fight", "scream", "mad", "fury", "revenge",
+            "betray", "hurt", "pain", "break", "destroy", "burn", "fire", "storm",
+            "rage", "furious", "enemy", "war", "battle", "fight", "rage", "wrath"
+        ],
+        'sad': [
+            "cry", "tears", "alone", "goodbye", "miss", "pain", "blue", "hurt",
+            "broken", "empty", "lonely", "lost", "regret", "sorry", "sorrow", "grief",
+            "heartache", "missing", "gone", "fade", "die", "end", "dark", "cold"
+        ],
+        'happy': [
+            "joy", "smile", "sun", "shine", "dance", "happy", "bright", "light",
+            "laugh", "fun", "play", "sing", "celebrate", "party", "cheer", "glad",
+            "wonderful", "amazing", "beautiful", "perfect", "dream", "hope", "love", "life"
+        ],
+        'energetic': [
+            "run", "move", "jump", "fire", "wild", "energy", "power", "strong",
+            "fast", "quick", "speed", "rush", "pump", "beat", "rhythm", "dance",
+            "party", "rock", "loud", "bass", "drums", "electric", "thunder", "storm"
+        ],
+        'calm': [
+            "peace", "quiet", "slow", "breeze", "dream", "calm", "soft", "gentle",
+            "easy", "smooth", "flow", "float", "drift", "rest", "sleep", "relax",
+            "serene", "tranquil", "soothe", "hush", "whisper", "silence", "still", "cool"
+        ],
+        'focused': [
+            "work", "focus", "drive", "goal", "win", "plan", "mind", "think",
+            "learn", "grow", "build", "create", "achieve", "success", "power", "strength",
+            "determine", "decide", "choose", "path", "way", "journey", "forward", "ahead"
+        ]
+    }
+    lyrics_lower = lyrics.lower() if lyrics else ""
+    mood_boost = {mood: 0 for mood in mood_keywords}
+    
+    # Count word occurrences with weighted scoring
+    for mood, keywords in mood_keywords.items():
+        for word in keywords:
+            # Count occurrences and weight them based on word importance
+            count = lyrics_lower.count(word)
+            if count > 0:
+                # Core words get higher weight
+                if word in ['love', 'hate', 'happy', 'sad', 'energy', 'calm', 'focus', 'mystery']:
+                    mood_boost[mood] += count * 2
+                else:
+                    mood_boost[mood] += count
+    
+    return mood_boost
+
+def analyze_track(track, genius):
+    """Analyze a single track with all its features."""
+    print(f"Analyzing track: {track['name']} by {track['artist']}")
+    itunes_preview_url = get_itunes_preview(track['name'], track['artist'])
+    audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
+    wav_path = None
+    y = None
+    sr = None
+    song = None
+    lyrics = None
+    sentiment = 0
+
+    try:
+        if itunes_preview_url:
+            print(f"Found iTunes preview for {track['name']}: {itunes_preview_url}")
+            wav_path = download_and_convert_preview(itunes_preview_url)
+            if wav_path:
+                try:
+                    y, sr = librosa.load(wav_path, sr=None)
+                    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+                    energy = float(np.mean(librosa.feature.rms(y=y)))
+                    brightness = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
+                    zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
+                    contrast = float(np.mean(librosa.feature.spectral_contrast(y=y, sr=sr)))
+                    audio_features = {
+                        'tempo': tempo,
+                        'energy': energy,
+                        'brightness': brightness,
+                        'zcr': zcr,
+                        'contrast': contrast
+                    }
+                    print(f"Audio features for {track['name']}: {audio_features}")
+                except Exception as e:
+                    print(f"Error analyzing audio features for {track['name']}: {e}")
+                finally:
+                    if wav_path and os.path.exists(wav_path):
+                        os.remove(wav_path)
+                    del wav_path
+                    if y is not None:
+                        del y
+                    if sr is not None:
+                        del sr
+        else:
+            print(f"No iTunes preview found for {track['name']}")
+
+        if genius:
+            try:
+                song = genius.search_song(track['name'], track['artist'])
+                lyrics = song.lyrics if song else None
+                if lyrics:
+                    print(f"Fetched lyrics for {track['name']}")
+                else:
+                    print(f"No lyrics found for {track['name']}")
+            except Exception as e:
+                print(f"Error fetching lyrics for '{track['name']}' by '{track['artist']}': {e}")
+                import traceback; traceback.print_exc()
+            time.sleep(1)  # Rate limiting
+
+        if lyrics:
+            sentiment = analyze_lyrics_sentiment(lyrics)
+            print(f"Sentiment for {track['name']}: {sentiment}")
+
+        track.update(audio_features)
+        track['sentiment'] = sentiment
+        track['moods'] = categorize_mood(
+            tempo=audio_features['tempo'],
+            energy=audio_features['energy'],
+            brightness=audio_features['brightness'],
+            zcr=audio_features['zcr'],
+            contrast=audio_features['contrast'],
+            sentiment=sentiment,
+            lyrics=lyrics
+        )
+        print(f"Moods for {track['name']}: {track['moods']}")
+        return track
+
+    except Exception as e:
+        print(f"Error analyzing track {track['name']}: {e}")
+        return None
+    finally:
+        # Cleanup
+        if lyrics:
+            del lyrics
+        if song:
+            del song
+
 def analyze_user_library(sp, session=None):
-    """Analyze user's library using iTunes previews (converted to wav) and Genius lyrics. Store result in session if provided."""
+    """Analyze user's library using parallel processing."""
     print("Fetching user's library...")
-    tracks = []
     genius = create_genius_client()
+    analyzed_tracks = []
+    
     try:
         offset = 0
-        limit = 10  # Reduce batch size for lower memory usage
-        analyzed_tracks = []
-        while True:
-            results = sp.current_user_saved_tracks(limit=limit, offset=offset)
-            if not results['items']:
-                break
-            batch_tracks = []
-            for item in results['items']:
-                track = item['track']
-                if track:
-                    batch_tracks.append({
-                        'id': track['id'],
-                        'name': track['name'],
-                        'artist': track['artists'][0]['name'],
-                        'uri': track['uri']
-                    })
-            print(f"Fetched {len(batch_tracks)} tracks in batch (offset {offset})")
-            # Analyze each track in the batch and release memory after each
-            for track in batch_tracks:
-                print(f"Analyzing track: {track['name']} by {track['artist']}")
-                itunes_preview_url = get_itunes_preview(track['name'], track['artist'])
-                audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
-                wav_path = None
-                y = None
-                sr = None
-                song = None
-                if itunes_preview_url:
-                    print(f"Found iTunes preview for {track['name']}: {itunes_preview_url}")
-                    wav_path = download_and_convert_preview(itunes_preview_url)
-                    if wav_path:
-                        try:
-                            y, sr = librosa.load(wav_path, sr=None)
-                            tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-                            energy = float(np.mean(librosa.feature.rms(y=y)))
-                            brightness = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
-                            zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
-                            contrast = float(np.mean(librosa.feature.spectral_contrast(y=y, sr=sr)))
-                            audio_features = {
-                                'tempo': tempo,
-                                'energy': energy,
-                                'brightness': brightness,
-                                'zcr': zcr,
-                                'contrast': contrast
-                            }
-                            print(f"Audio features for {track['name']}: {audio_features}")
-                        except Exception as e:
-                            print(f"Error analyzing audio features for {track['name']}: {e}")
-                        finally:
-                            if wav_path and os.path.exists(wav_path):
-                                os.remove(wav_path)
-                            # Explicitly release memory for large objects
-                            del wav_path
-                            if y is not None:
-                                del y
-                            if sr is not None:
-                                del sr
-                else:
-                    print(f"No iTunes preview found for {track['name']}")
-                lyrics = None
-                sentiment = 0
-                if genius:
+        limit = 20  # Increased batch size for better parallelization
+        max_workers = min(32, (os.cpu_count() or 1) * 4)  # Limit max workers
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            while True:
+                results = sp.current_user_saved_tracks(limit=limit, offset=offset)
+                if not results['items']:
+                    break
+                    
+                batch_tracks = []
+                for item in results['items']:
+                    track = item['track']
+                    if track:
+                        batch_tracks.append({
+                            'id': track['id'],
+                            'name': track['name'],
+                            'artist': track['artists'][0]['name'],
+                            'uri': track['uri']
+                        })
+                
+                print(f"Processing batch of {len(batch_tracks)} tracks (offset {offset})")
+                
+                # Submit all tracks in the batch for parallel processing
+                future_to_track = {
+                    executor.submit(analyze_track, track, genius): track 
+                    for track in batch_tracks
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_track):
+                    track = future_to_track[future]
                     try:
-                        song = genius.search_song(track['name'], track['artist'])
-                        lyrics = song.lyrics if song else None
-                        if lyrics:
-                            print(f"Fetched lyrics for {track['name']}")
-                        else:
-                            print(f"No lyrics found for {track['name']}")
+                        result = future.result()
+                        if result:
+                            analyzed_tracks.append(result)
                     except Exception as e:
-                        print(f"Error fetching lyrics for {track['name']}: {e}")
-                if lyrics:
-                    sentiment = analyze_lyrics_sentiment(lyrics)
-                    print(f"Sentiment for {track['name']}: {sentiment}")
-                track.update(audio_features)
-                track['sentiment'] = sentiment
-                track['moods'] = categorize_mood(
-                    tempo=audio_features['tempo'],
-                    energy=audio_features['energy'],
-                    brightness=audio_features['brightness'],
-                    zcr=audio_features['zcr'],
-                    contrast=audio_features['contrast'],
-                    sentiment=sentiment
-                )
-                print(f"Moods for {track['name']}: {track['moods']}")
-                analyzed_tracks.append(track)
-                # Explicitly release memory for lyrics and song
-                del lyrics
-                if song is not None:
-                    del song
-            offset += limit
-            if len(batch_tracks) < limit:
-                break
-            # Explicitly release memory for batch_tracks
-            del batch_tracks
+                        print(f"Error processing track {track['name']}: {e}")
+                
+                offset += limit
+                if len(batch_tracks) < limit:
+                    break
+                
+                # Small delay between batches to avoid overwhelming APIs
+                time.sleep(0.5)
+        
         # Build mood->uris dict, limit to 100 per mood
         mood_uris = {}
         for track in analyzed_tracks:
             for mood in track['moods']:
                 mood_uris.setdefault(mood, []).append(track['uri'])
+        
         for mood in mood_uris:
             if len(mood_uris[mood]) > 100:
                 mood_uris[mood] = random.sample(mood_uris[mood], 100)
+        
         print("Mood URI dict:", {k: len(v) for k, v in mood_uris.items()})
+        
         # Store in session if provided
         if session is not None:
             session['mood_uris'] = mood_uris
             session.modified = True
-        # Return both for compatibility
+        
         return analyzed_tracks, mood_uris
+        
     except Exception as e:
         print(f"Error in analyze_user_library: {e}")
         import traceback; traceback.print_exc()
-        return [], {}  # Return empty dict
+        return [], {}
 
-def categorize_mood(tempo, energy, brightness, zcr, contrast, sentiment):
+def categorize_mood(tempo, energy, brightness, zcr, contrast, sentiment, lyrics=None):
     moods = []
-    # Happy: very positive lyrics, bright, energetic
-    if sentiment > 0.5 and brightness > 2500 and energy > 0.07:
+    # Use Naive Bayes classifier if lyrics and model are available
+    nb_moods = []
+    if lyrics and training_data:
+        nb_moods = naive_bayes_clf.predict(lyrics, threshold=0.15)  # Lower threshold for more multi-label
+        moods.extend(nb_moods)
+    # Bag-of-words boost (legacy, can be removed if NB is good)
+    bow_boost = bag_of_words_mood_boost(lyrics) if lyrics else {k:0 for k in ['romantic','mysterious','mad','sad','happy','energetic','calm','focused']}
+    # Audio/sentiment-based adjusters (only add if not already present)
+    if (sentiment > 0.5 and brightness > 2500 and energy > 0.07 or bow_boost['happy'] > 1) and 'happy' not in moods:
         moods.append("happy")
-    # Sad: negative lyrics, low brightness, low energy
-    if sentiment < -0.3 and brightness < 2000 and energy < 0.06:
+    if (sentiment < -0.3 and brightness < 2000 and energy < 0.06 or bow_boost['sad'] > 1) and 'sad' not in moods:
         moods.append("sad")
-    # Energetic: high tempo, high energy, high zcr
-    if tempo > 115 and energy > 0.08 and zcr > 0.09:
+    if (tempo > 115 and energy > 0.08 and zcr > 0.09 or bow_boost['energetic'] > 1) and 'energetic' not in moods:
         moods.append("energetic")
-    # Calm: slow, low energy, low zcr, low contrast
-    if tempo < 90 and energy < 0.05 and zcr < 0.05 and contrast < 20:
+    if (tempo < 90 and energy < 0.05 and zcr < 0.05 and contrast < 20 or bow_boost['calm'] > 1) and 'calm' not in moods:
         moods.append("calm")
-    # Mad: negative lyrics, high energy, high zcr
-    if sentiment < -0.2 and energy > 0.07 and zcr > 0.08:
+    if (sentiment < -0.2 and energy > 0.07 and zcr > 0.08 or bow_boost['mad'] > 1) and 'mad' not in moods:
         moods.append("mad")
-    # Romantic: positive lyrics, moderate tempo, bright, low zcr
-    if sentiment > 0.2 and 85 < tempo < 115 and brightness > 2200 and zcr < 0.07:
+    if (sentiment > 0.2 and 85 < tempo < 115 and brightness > 2200 and zcr < 0.07 or bow_boost['romantic'] > 1) and 'romantic' not in moods:
         moods.append("romantic")
-    # Focused: neutral lyrics, moderate tempo, moderate energy, low zcr, low contrast
-    if 85 <= tempo <= 115 and 0.04 <= energy <= 0.07 and -0.2 < sentiment < 0.2 and contrast < 22 and zcr < 0.07:
+    if (85 <= tempo <= 115 and 0.04 <= energy <= 0.07 and -0.2 < sentiment < 0.2 and contrast < 22 and zcr < 0.07 or bow_boost['focused'] > 1) and 'focused' not in moods:
         moods.append("focused")
-    # Mysterious: moderate tempo, low brightness, high contrast, neutral/negative sentiment
-    if 80 <= tempo <= 120 and brightness < 1800 and contrast > 22 and -0.4 < sentiment < 0.2:
+    if (80 <= tempo <= 120 and brightness < 1800 and contrast > 22 and -0.4 < sentiment < 0.2 or bow_boost['mysterious'] > 1) and 'mysterious' not in moods:
         moods.append("mysterious")
     # Fallbacks: assign most likely if nothing else matches
     if not moods:
