@@ -8,7 +8,7 @@ from flask_cors import CORS
 import time
 from lyrics_service import analyze_user_library, get_tracks_for_mood
 import spotify_service
-from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection, wait_for_db
+from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection
 import logging
 
 # Set up logging
@@ -21,10 +21,7 @@ logger = logging.getLogger(__name__)
 # Load .env from the root directory
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
-# Wait for database to be ready
-if not wait_for_db():
-    logger.error("Failed to connect to database. Exiting...")
-    sys.exit(1)
+# No dotenv loading here; all env vars come from Docker Compose
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
