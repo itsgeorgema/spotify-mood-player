@@ -15,6 +15,15 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 - Parallel processing for faster library analysis
 - Automatic database connection management and retry logic
 
+## Tech Stack
+
+- Frontend: React, TypeScript, Vite, HTML, CSS
+- Backend: Flask, Python
+- Database: MySQL
+- Infrastructure: Docker
+- APIs and Libaries: iTunes Search API, Genius API, Spotify API, Librosa, ThreadPoolExecutor, Gevent, NLTK
+- Build/Dev Tools: Vite, Node.js, npm
+
 ## Setup
 
 ### 1. Clone the repository
@@ -107,13 +116,4 @@ mysql -u root -p your_db_name < mysql-init.sql
 - Only whitelisted Spotify users can log in (see Spotify Developer Dashboard).
 - To re-analyze your library, log out and log back in.
 - For any issues, check backend and frontend logs.
-
-## Tech Stack
-
-- Frontend: React, TypeScript, Vite, HTML, CSS
-- Backend: Flask, Python
-- Database: MySQL
-- Infrastructure: Docker
-- APIs and Libaries: iTunes Search API, Genius API, Spotify API, Librosa, ThreadPoolExecutor, Gevent, NLTK
-- Build/Dev Tools: Vite, Node.js, npm
 
