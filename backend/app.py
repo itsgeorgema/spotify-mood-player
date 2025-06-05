@@ -76,7 +76,7 @@ CORS(app,
          "origins": allowed_origins,
          "supports_credentials": True,
          "expose_headers": ["Set-Cookie", "Authorization"],
-         "allow_headers": ["Content-Type", "Authorization", "cache-control"],
+         "allow_headers": ["Content-Type", "Authorization", "cache-control", "Pragma"],
          "methods": ["GET", "POST", "OPTIONS"]
      }},
      supports_credentials=True)
@@ -370,7 +370,7 @@ def add_cors_headers(response):
     frontend_url = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
     response.headers['Access-Control-Allow-Origin'] = frontend_url
     response.headers['Access-Control-Allow-Credentials'] = 'true'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,cache-control'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,cache-control,Pragma'
     response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
     return response
 
