@@ -12,6 +12,8 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 - Mood-based Spotify playback using audio and lyrics analysis
 - Multi-mood support (tracks can belong to several moods)
 - Uses iTunes previews + Librosa to extract audio features
+- Parallel processing for faster library analysis
+- Automatic database connection management and retry logic
 
 ## Setup
 
@@ -60,10 +62,26 @@ docker compose up --build
 
 #### Frontend
 ```bash
-cd src
+cd frontend
 npm install
 npm run dev
 ```
+
+## Performance Features
+
+- **Parallel Processing**: Uses ThreadPoolExecutor for concurrent track analysis
+- **Database Connection Management**: Automatic retry logic for database connections
+- **Service Orchestration**: Docker Compose with health checks ensures proper startup order
+- **Memory Management**: Batch processing with proper resource cleanup
+- **API Rate Limiting**: Built-in delays to respect external API limits
+
+## Development Notes
+
+- The backend uses Gunicorn with Gevent workers for async processing
+- Database connections are automatically retried on startup
+- Track analysis is parallelized for better performance
+- Memory usage is optimized through batch processing
+- API rate limits are respected with built-in delays
 
 ### 4. Access the App
 
@@ -96,6 +114,6 @@ mysql -u root -p your_db_name < mysql-init.sql
 - Backend: Flask, Python
 - Database: MySQL
 - Infrastructure: Docker
-- APIs: Librosa, iTunes Search API, Genius API, Spotify API
-- Dev Tools: Node.js, npm
+- APIs and Libaries: iTunes Search API, Genius API, Spotify API, Librosa, ThreadPoolExecutor, Gevent, NLTK
+- Build/Dev Tools: Vite, Node.js, npm
 
