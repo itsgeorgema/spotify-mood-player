@@ -56,18 +56,28 @@ if training_data:
 def create_genius_client():
     """Create a Genius client with proper SSL configuration, retries, and custom User-Agent"""
     try:
+        token = os.getenv('GENIUS_ACCESS_TOKEN')
+        if not token:
+            print("WARNING: GENIUS_ACCESS_TOKEN is not set")
+            return None
+        print(f"Using Genius token: {token[:5]}...{token[-5:]}")  # Only log first/last 5 chars for security
+        
         genius = Genius(
-            os.getenv('GENIUS_ACCESS_TOKEN'),
+            token,
             verbose=False,
             remove_section_headers=True,
-            timeout=15,
-            retries=3
+            timeout=30,  # Increased timeout
+            retries=5,   # Increased retries
+            sleep_time=2  # Add sleep time between retries
         )
-        # Set a custom User-Agent to avoid being blocked as a bot, if possible
-        try:
-            genius.session.headers['User-Agent'] = 'Mozilla/5.0 (compatible; SpotifyMoodPlayer/1.0; +https://yourdomain.com)'  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        # Set a more realistic User-Agent
+        genius.session.headers.update({  # type: ignore[attr-defined]
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Origin': 'https://genius.com',
+            'Referer': 'https://genius.com/'
+        })
         return genius
     except Exception as e:
         print(f"Error creating Genius client: {e}")
@@ -274,8 +284,8 @@ def analyze_user_library(sp, session=None):
     
     try:
         offset = 0
-        limit = 20  # Increased batch size for better parallelization
-        max_workers = min(32, (os.cpu_count() or 1) * 4)  # Limit max workers
+        limit = 10  # Reduced batch size to avoid rate limits
+        max_workers = min(8, (os.cpu_count() or 1) * 2)  # Reduced max workers
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             while True:
@@ -316,8 +326,8 @@ def analyze_user_library(sp, session=None):
                 if len(batch_tracks) < limit:
                     break
                 
-                # Small delay between batches to avoid overwhelming APIs
-                time.sleep(0.5)
+                # Increased delay between batches
+                time.sleep(2)
         
         # Build mood->uris dict, limit to 100 per mood
         mood_uris = {}
