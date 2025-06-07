@@ -10,11 +10,9 @@ from urllib.parse import quote
 from pydub import AudioSegment
 from nltk.sentiment import SentimentIntensityAnalyzer
 from naive_bayes import NaiveBayesMoodClassifier
-import time
 import csv
 import pathlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import partial
 
 # Download required NLTK data
 nltk.download('vader_lexicon', quiet=True)
@@ -41,11 +39,11 @@ def load_training_data():
             ("I'm so sad", ["sad"]),
             ("I'm so energetic", ["energetic"]),
             ("I'm so calm", ["calm"]),
-    ("I'm so mad", ["mad"]),
+            ("I'm so mad", ["mad"]),
             ("I'm so romantic", ["romantic"]),
-    ("I'm so focused", ["focused"]),
+            ("I'm so focused", ["focused"]),
             ("I'm so mysterious", ["mysterious"])
-] 
+        ]
 
 # Load training data from CSV
 training_data = load_training_data()
@@ -63,34 +61,30 @@ def create_genius_client():
         if not token:
             print("WARNING: GENIUS_ACCESS_TOKEN is not set")
             return None
-        print(f"Using Genius token: {token[:5]}...{token[-5:]}")  # Only log first/last 5 chars for security
+        print(f"Using Genius token: {token[:5]}...{token[-5:]}")
         
         print("Creating Genius client...")
         genius = Genius(
             token,
-            verbose=True,  # Enable verbose mode to see API requests
+            verbose=True,
             remove_section_headers=True,
-            timeout=30,  # Increased timeout
-            retries=10,   # Increased retries
-            sleep_time=5  # Increased sleep time between retries
+            timeout=30,
+            retries=3,
+            sleep_time=5,  # Increased sleep time between requests
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         )
-        print("Genius client created successfully")
         
-        # Set a more realistic User-Agent
-        print("Updating Genius client headers...")
-        genius.session.headers.update({  # type: ignore[attr-defined]
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Origin': 'https://genius.com',
-            'Referer': 'https://genius.com/',
-            'Connection': 'keep-alive',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-origin'
-        })
-        print("Genius client headers updated")
+        # Test the token with a simple request
+        try:
+            test_song = genius.search_song("Test", "Test Artist", get_full_info=False)
+            if not test_song:
+                print("WARNING: Genius token validation failed - no results returned")
+                return None
+        except Exception as e:
+            print(f"WARNING: Genius token validation failed: {e}")
+            return None
+        
+        print("Genius client created successfully")
         return genius
     except Exception as e:
         print(f"Error creating Genius client: {e}")
@@ -203,6 +197,34 @@ def bag_of_words_mood_boost(lyrics):
     
     return mood_boost
 
+def fetch_lyrics_with_vagalume(song_title, artist_name):
+    """Fetch lyrics from Vagalume public API as a fallback if Genius fails."""
+    try:
+        print(f"[VAGALUME] Attempting to fetch lyrics for '{song_title}' by '{artist_name}'")
+        base_url = "https://api.vagalume.com.br/search.php"
+        params = {
+            'art': artist_name,
+            'mus': song_title
+        }
+        resp = requests.get(base_url, params=params, timeout=10)
+        if resp.status_code != 200:
+            print(f"[VAGALUME] API request failed: {resp.status_code}")
+            return None
+        data = resp.json()
+        if 'type' in data and data['type'] == 'notfound':
+            print(f"[VAGALUME] No lyrics found for '{song_title}' by '{artist_name}'")
+            return None
+        if 'mus' in data and len(data['mus']) > 0 and 'text' in data['mus'][0]:
+            lyrics = data['mus'][0]['text']
+            print(f"[VAGALUME] Successfully fetched lyrics for '{song_title}'")
+            return lyrics
+        print(f"[VAGALUME] No lyrics found in response for '{song_title}' by '{artist_name}'")
+        return None
+    except Exception as e:
+        print(f"[VAGALUME] Error fetching lyrics: {e}")
+        import traceback; traceback.print_exc()
+        return None
+
 def analyze_track(track, genius):
     """Analyze a single track with all its features."""
     print(f"Analyzing track: {track['name']} by {track['artist']}")
@@ -214,6 +236,7 @@ def analyze_track(track, genius):
     song = None
     lyrics = None
     sentiment = 0
+    used_fallback = False
 
     try:
         if itunes_preview_url:
@@ -257,25 +280,52 @@ def analyze_track(track, genius):
                     print(f"Using Genius token: {token[:5]}...{token[-5:]}")
                 else:
                     print("WARNING: GENIUS_ACCESS_TOKEN is not set")
-                song = genius.search_song(track['name'], track['artist'])
-                if song:
-                    lyrics = song.lyrics
-                    print(f"Successfully fetched lyrics for {track['name']}")
-                    print(f"Lyrics length: {len(lyrics)} characters")
-                else:
-                    print(f"No lyrics found for {track['name']} - API returned no results")
+                
+                # Try multiple search strategies
+                search_strategies = [
+                    # Strategy 1: Basic search with exact match
+                    lambda: genius.search_song(track['name'], track['artist'], get_full_info=False),
+                    # Strategy 2: Basic search with partial match
+                    lambda: genius.search_song(track['name'].split('(')[0].strip(), track['artist'], get_full_info=False),
+                    # Strategy 3: Full search with exact match
+                    lambda: genius.search_song(track['name'], track['artist'], get_full_info=True),
+                    # Strategy 4: Full search with partial match
+                    lambda: genius.search_song(track['name'].split('(')[0].strip(), track['artist'], get_full_info=True)
+                ]
+                
+                for i, search_strategy in enumerate(search_strategies, 1):
+                    try:
+                        print(f"Trying search strategy {i}...")
+                        song = search_strategy()
+                        if song and song.lyrics:
+                            lyrics = song.lyrics
+                            print(f"Successfully fetched lyrics for {track['name']} (strategy {i})")
+                            print(f"Lyrics length: {len(lyrics)} characters")
+                            break
+                        else:
+                            print(f"No lyrics found with strategy {i}")
+                    except Exception as e:
+                        print(f"Error in search strategy {i}: {str(e)}")
+                        continue
+                
+                if not lyrics:
+                    print("All Genius search strategies failed, trying Vagalume fallback...")
+                    lyrics = fetch_lyrics_with_vagalume(track['name'], track['artist'])
+                    if lyrics:
+                        print(f"Successfully fetched lyrics from Vagalume for {track['name']}")
+                        used_fallback = True
+                    else:
+                        print(f"Vagalume fallback also failed for {track['name']}")
+                
             except Exception as e:
                 print(f"Error fetching lyrics for '{track['name']}' by '{track['artist']}':")
                 print(f"Error type: {type(e).__name__}")
                 print(f"Error message: {str(e)}")
-                if isinstance(e, requests.exceptions.RequestException) and hasattr(e, 'response') and e.response is not None:
-                    print(f"Response status code: {e.response.status_code}")
-                    print(f"Response headers: {e.response.headers}")
-                    print(f"Response body: {e.response.text}")
                 import traceback
                 print("Full error traceback:")
                 print(traceback.format_exc())
-            time.sleep(2)  # Rate limiting
+        else:
+            print("No Genius client available - skipping lyrics fetch")
 
         if lyrics:
             sentiment = analyze_lyrics_sentiment(lyrics)
@@ -321,8 +371,9 @@ def analyze_user_library(sp, session=None):
     
     try:
         offset = 0
-        limit = 20  # Restore batch size to 20 for faster processing
-        max_workers = min(20, (os.cpu_count() or 1) * 2)  # Use up to 20 workers for max parallelism
+        limit = 20  # Batch size for each round of parallel processing
+        # Use up to 4x the number of CPUs, but cap at 32
+        max_workers = min(32, (os.cpu_count() or 1) * 4)
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             while True:
@@ -359,14 +410,30 @@ def analyze_user_library(sp, session=None):
                             print(f"Successfully analyzed track: {track['name']}")
                     except Exception as e:
                         print(f"Error processing track {track['name']}: {e}")
-                        import traceback; traceback.print_exc()
+                        # Try to fetch lyrics with Vagalume as fallback
+                        try:
+                            lyrics = fetch_lyrics_with_vagalume(track['name'], track['artist'])
+                            if lyrics:
+                                track['lyrics'] = lyrics
+                                track['sentiment'] = analyze_lyrics_sentiment(lyrics)
+                                track['moods'] = categorize_mood(
+                                    tempo=0,  # Use default values since we don't have audio features
+                                    energy=0,
+                                    brightness=0,
+                                    zcr=0,
+                                    contrast=0,
+                                    sentiment=track['sentiment'],
+                                    lyrics=lyrics
+                                )
+                                analyzed_tracks.append(track)
+                                print(f"Successfully analyzed track with Vagalume fallback: {track['name']}")
+                        except Exception as fallback_error:
+                            print(f"Fallback also failed for track {track['name']}: {fallback_error}")
                 
                 offset += limit
                 if len(batch_tracks) < limit:
                     break
                 
-                time.sleep(1)  
-        
         # Build mood->uris dict, limit to 100 per mood
         mood_uris = {}
         for track in analyzed_tracks:
