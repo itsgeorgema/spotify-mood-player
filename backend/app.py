@@ -50,9 +50,9 @@ if IS_PRODUCTION:
 else: # Local development
     app.config['SERVER_NAME'] = f"127.0.0.1:{backend_port_local_dev}"
     app.config.update(
-        SESSION_COOKIE_SECURE=False,  # Set to True in production
+        SESSION_COOKIE_SECURE=True,  # Set to True in production
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='Lax',
+        SESSION_COOKIE_SAMESITE='None',
         SESSION_COOKIE_PATH='/',
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
@@ -69,7 +69,16 @@ sys.stdout.flush()
 
 # CORS CONFIG
 frontend_url_from_env = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
+ngrok_url = os.getenv("NGROK_URL")
+localtunnel_url = os.getenv("LOCAL_TUNNEL_URL")  # Add support for LocalTunnel
+
 allowed_origins = [frontend_url_from_env, "https://spotify-mood-player.vercel.app"]
+if ngrok_url:
+    allowed_origins.append(ngrok_url)
+if localtunnel_url:
+    allowed_origins.append(localtunnel_url)
+# For quick testing, you can also hardcode your current localtunnel URL:
+# allowed_origins.append("https://your-localtunnel-url.loca.lt")
 
 CORS(app, 
      resources={r"/api/*": {
@@ -81,6 +90,8 @@ CORS(app,
      }},
      supports_credentials=True)
 
+# Add this after other global variables
+analysis_progress = {}
 
 # --- API Routes ---
 @app.route('/api/login', methods=['GET'])
@@ -175,6 +186,21 @@ def spotify_logout():
     sys.stdout.flush()
     return jsonify({"message": "Logged out successfully"}), 200
 
+@app.route('/api/analysis_progress', methods=['GET'])
+def get_analysis_progress():
+    """Get the current progress of library analysis"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Not authenticated"}), 401
+    
+    progress = analysis_progress.get(user_id, {
+        'total_tracks': 0,
+        'analyzed_tracks': 0,
+        'status': 'not_started'
+    })
+    
+    return jsonify(progress), 200
+
 @app.route('/api/sentiment_analysis', methods=['POST'])
 def sentiment_analysis_route():
     print("--- /api/sentiment_analysis route hit ---")
@@ -207,9 +233,30 @@ def sentiment_analysis_route():
         }), 200
 
     try:
+        # Initialize progress tracking
+        analysis_progress[user_id] = {
+            'total_tracks': 0,
+            'analyzed_tracks': 0,
+            'status': 'in_progress'
+        }
+        
+        # Get total number of tracks first
+        total_tracks = 0
+        offset = 0
+        limit = 20
+        while True:
+            results = sp.current_user_saved_tracks(limit=limit, offset=offset)
+            if not results or not results.get('items'):
+                break
+            total_tracks += len(results['items'])
+            offset += limit
+        
+        analysis_progress[user_id]['total_tracks'] = total_tracks
+        
         # Analyze user's library and get list of tracks with moods
-        analyzed_tracks, mood_uris = analyze_user_library(sp)
+        analyzed_tracks, mood_uris = analyze_user_library(sp, session, analysis_progress, user_id)
         if not analyzed_tracks:
+            analysis_progress[user_id]['status'] = 'failed'
             return jsonify({"error": "No tracks were analyzed"}), 500
             
         # analyzed_tracks is a list of dicts with 'uri' and 'moods' (list)
@@ -219,6 +266,11 @@ def sentiment_analysis_route():
         logger.info(f"Analyzed tracks: {analyzed_tracks}")
         logger.info(f"Mood URIs: {mood_uris}")
         sys.stdout.flush()
+        
+        # Update progress to completed
+        analysis_progress[user_id]['status'] = 'completed'
+        analysis_progress[user_id]['analyzed_tracks'] = total_tracks
+        
         # Optionally store mood_uris in session for frontend
         session['mood_uris'] = mood_uris
         session.modified = True
@@ -231,6 +283,8 @@ def sentiment_analysis_route():
         logger.error(f"Error in sentiment analysis: {e}")
         traceback.print_exc()
         sys.stdout.flush()
+        if user_id in analysis_progress:
+            analysis_progress[user_id]['status'] = 'failed'
         return jsonify({"error": "Failed to analyze library"}), 500
 
 @app.route('/api/analyze', methods=['POST'])
