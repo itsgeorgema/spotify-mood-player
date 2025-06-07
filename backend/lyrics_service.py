@@ -13,6 +13,7 @@ from naive_bayes import NaiveBayesMoodClassifier
 import csv
 import pathlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List
 
 # Download required NLTK data
 nltk.download('vader_lexicon', quiet=True)
@@ -72,17 +73,6 @@ def create_genius_client():
             retries=3,
             sleep_time=5,  # Increased sleep time between requests
         )
-        
-        # Test the token with a simple request
-        try:
-            test_song = genius.search_song("Test", "Test Artist", get_full_info=False)
-            if not test_song:
-                print("WARNING: Genius token validation failed - no results returned")
-                return None
-        except Exception as e:
-            print(f"WARNING: Genius token validation failed: {e}")
-            return None
-        
         print("Genius client created successfully")
         return genius
     except Exception as e:
@@ -135,57 +125,58 @@ def get_itunes_preview(track_name, artist_name):
         print(f"Error fetching iTunes preview: {e}")
     return None
 
-def bag_of_words_mood_boost(lyrics):
-    # Define keywords for each mood with expanded song-specific vocabulary
-    mood_keywords = {
+# --- Heartbreak and negative phrase detection ---
+HEARTBREAK_PHRASES = [
+    "heartbreak", "miss you", "wish", "regret", "left me", "cry", "alone", "goodbye", "lost", "pain", "sorry", "tears", "broken", "apart", "gone", "over", "move on", "hurts", "memories", "empty", "let go", "farewell", "without you", "why", "can't", "couldn't", "should've", "if only", "never", "sad", "blue", "sorrow", "grief", "aching", "wilt", "drown", "wound", "bleed", "abandon", "isolate", "solitude", "tragedy",
+    "when I was your man", "all I want", "mr. loverman", "sour grapes", "wish I could", "if only", "I miss you", "I'm sorry", "let you go", "can't have", "couldn't keep", "should've known", "never again", "without you", "left me", "move on", "over now", "goodbye", "gone", "apart", "hurts", "memories", "empty", "farewell",
+    # More heartbreak context
+    "i still care", "i can't forget", "i can't move on", "i'm not over you", "i'm not okay", "i'm not fine", "i'm broken", "i'm lost", "i'm alone", "i'm empty", "i'm missing you", "i'm hurting", "i'm in pain", "i'm blue", "i'm down", "i'm sorry for", "i wish you were here", "i wish it was different", "i wish i could go back", "i wish i didn't care", "i wish i could forget"
+]
+
+def detect_heartbreak_context(lyrics):
+    if not lyrics:
+        return False
+    lyrics_lower = lyrics.lower()
+    for phrase in HEARTBREAK_PHRASES:
+        if phrase in lyrics_lower:
+            return True
+    return False
+
+def expanded_bag_of_words():
+    # Expanded and modernized bag-of-words for each mood
+    return {
         'romantic': [
-            "love", "heart", "kiss", "baby", "darling", "sweet", "forever", "together", 
-            "soul", "passion", "desire", "romance", "beautiful", "perfect", "dream", 
-            "hold", "touch", "feel", "forever", "soulmate", "cherish", "adore", "belong"
+            "love", "heart", "kiss", "baby", "darling", "sweet", "forever", "together", "soul", "passion", "desire", "romance", "beautiful", "perfect", "dream", "hold", "touch", "feel", "forever", "soulmate", "cherish", "adore", "belong", "affection", "crush", "date", "roses", "cuddle", "embrace", "devotion", "honey", "valentine", "flirt", "infatuation"
         ],
         'mysterious': [
-            "night", "dark", "shadow", "secret", "mystery", "moon", "whisper", "silence",
-            "unknown", "hidden", "ghost", "haunt", "echo", "fog", "mist", "twilight",
-            "dusk", "dawn", "veil", "enigma", "puzzle", "riddle", "curse", "spell"
+            "night", "dark", "shadow", "secret", "mystery", "moon", "whisper", "silence", "unknown", "hidden", "ghost", "haunt", "echo", "fog", "mist", "twilight", "dusk", "dawn", "veil", "enigma", "puzzle", "riddle", "curse", "spell", "phantom", "illusion", "maze", "cryptic", "arcane", "omen", "veil", "shroud"
         ],
         'mad': [
-            "hate", "anger", "rage", "fight", "scream", "mad", "fury", "revenge",
-            "betray", "hurt", "pain", "break", "destroy", "burn", "fire", "storm",
-            "rage", "furious", "enemy", "war", "battle", "fight", "rage", "wrath"
+            "hate", "anger", "rage", "fight", "scream", "mad", "fury", "revenge", "betray", "hurt", "pain", "break", "destroy", "burn", "fire", "storm", "furious", "enemy", "war", "battle", "wrath", "explode", "shout", "slam", "punch", "yell", "agony", "frustrate", "resent", "irate", "outburst"
         ],
         'sad': [
-            "cry", "tears", "alone", "goodbye", "miss", "pain", "blue", "hurt",
-            "broken", "empty", "lonely", "lost", "regret", "sorry", "sorrow", "grief",
-            "heartache", "missing", "gone", "fade", "die", "end", "dark", "cold"
+            "cry", "tears", "alone", "goodbye", "miss", "pain", "blue", "hurt", "broken", "empty", "lonely", "lost", "regret", "sorry", "sorrow", "grief", "heartache", "missing", "gone", "fade", "die", "end", "dark", "cold", "weep", "mourn", "depress", "down", "hopeless", "melancholy", "despair", "forsaken", "aching", "wilt", "drown", "wound", "bleed", "abandon", "isolate", "solitude", "tragedy", "heartbreak", "left me", "apart", "move on", "over", "hurts", "memories", "empty", "let go", "farewell", "without you", "why", "can't", "couldn't", "should've", "if only", "never", "wish", "wish I could", "I miss you", "I'm sorry", "let you go", "can't have", "couldn't keep", "should've known", "never again", "without you", "move on", "over now", "goodbye", "gone", "apart", "hurts", "memories", "empty", "farewell"
         ],
         'happy': [
-            "joy", "smile", "sun", "shine", "dance", "happy", "bright", "light",
-            "laugh", "fun", "play", "sing", "celebrate", "party", "cheer", "glad",
-            "wonderful", "amazing", "beautiful", "perfect", "dream", "hope", "love", "life"
+            "joy", "smile", "sun", "shine", "dance", "happy", "bright", "light", "laugh", "fun", "play", "sing", "celebrate", "party", "cheer", "glad", "wonderful", "amazing", "beautiful", "perfect", "dream", "hope", "love", "life", "yay", "delight", "ecstatic", "glee", "bliss", "grin", "excite", "radiant", "bubbly", "upbeat", "merry", "jolly", "elated", "sparkle", "vivid", "sunny", "carefree"
         ],
         'energetic': [
-            "run", "move", "jump", "fire", "wild", "energy", "power", "strong",
-            "fast", "quick", "speed", "rush", "pump", "beat", "rhythm", "dance",
-            "party", "rock", "loud", "bass", "drums", "electric", "thunder", "storm"
+            "run", "move", "jump", "fire", "wild", "energy", "power", "strong", "fast", "quick", "speed", "rush", "pump", "beat", "rhythm", "dance", "party", "rock", "loud", "bass", "drums", "electric", "thunder", "storm", "hype", "adrenaline", "charge", "blast", "roar", "pulse", "vibe", "bounce", "rush", "frenzy", "sprint", "burst"
         ],
         'calm': [
-            "peace", "quiet", "slow", "breeze", "dream", "calm", "soft", "gentle",
-            "easy", "smooth", "flow", "float", "drift", "rest", "sleep", "relax",
-            "serene", "tranquil", "soothe", "hush", "whisper", "silence", "still", "cool"
+            "peace", "quiet", "slow", "breeze", "dream", "calm", "soft", "gentle", "easy", "smooth", "flow", "float", "drift", "rest", "sleep", "relax", "serene", "tranquil", "soothe", "hush", "whisper", "silence", "still", "cool", "chill", "mellow", "breathe", "cozy", "lullaby", "ease", "soothing", "zen", "meditate", "peaceful"
         ],
         'focused': [
-            "work", "focus", "drive", "goal", "win", "plan", "mind", "think",
-            "learn", "grow", "build", "create", "achieve", "success", "power", "strength",
-            "determine", "decide", "choose", "path", "way", "journey", "forward", "ahead"
+            "work", "focus", "drive", "goal", "win", "plan", "mind", "think", "learn", "grow", "build", "create", "achieve", "success", "power", "strength", "determine", "decide", "choose", "path", "way", "journey", "forward", "ahead", "concentrate", "study", "dedicate", "commit", "resolve", "target", "ambition", "vision", "mission", "discipline"
         ]
     }
+
+def bag_of_words_mood_boost(lyrics):
+    mood_keywords = expanded_bag_of_words()
     lyrics_lower = lyrics.lower() if lyrics else ""
     mood_boost = {mood: 0 for mood in mood_keywords}
-    
-    # Count word occurrences with weighted scoring
     for mood, keywords in mood_keywords.items():
         for word in keywords:
-            # Count occurrences and weight them based on word importance
             count = lyrics_lower.count(word)
             if count > 0:
                 # Core words get higher weight
@@ -193,8 +184,132 @@ def bag_of_words_mood_boost(lyrics):
                     mood_boost[mood] += count * 2
                 else:
                     mood_boost[mood] += count
-    
     return mood_boost
+
+# --- Scoring model weights (recalibrated) ---
+MOOD_SCORING_WEIGHTS = {
+    'naive_bayes': 0.35,   # Slightly less emphasis on lyrics-only
+    'bag_of_words': 0.18,  # Slightly less
+    'sentiment': 0.22,     # More weight to sentiment
+    'audio': 0.25          # More weight to audio features
+}
+
+# --- Per-mood audio/sentiment calibration (tuned) ---
+MOOD_AUDIO_THRESHOLDS = {
+    'happy':     {'sentiment': 0.25,  'brightness': 2000, 'energy': 0.05, 'zcr': 0.05, 'tempo': 95},
+    'sad':       {'sentiment': -0.15, 'brightness': 1700, 'energy': 0.045, 'zcr': 0.035, 'tempo': 85},
+    'energetic': {'sentiment': 0.05,  'brightness': 1800, 'energy': 0.07, 'zcr': 0.08, 'tempo': 115},
+    'calm':      {'sentiment': 0.0,   'brightness': 1600, 'energy': 0.035, 'zcr': 0.035, 'tempo': 75},
+    'mad':       {'sentiment': -0.08, 'brightness': 1700, 'energy': 0.06, 'zcr': 0.07, 'tempo': 100},
+    'romantic':  {'sentiment': 0.15,  'brightness': 1800, 'energy': 0.045, 'zcr': 0.045, 'tempo': 90},
+    'focused':   {'sentiment': 0.05,  'brightness': 1700, 'energy': 0.05, 'zcr': 0.045, 'tempo': 95},
+    'mysterious':{'sentiment': -0.05, 'brightness': 1500, 'energy': 0.045, 'zcr': 0.055, 'tempo': 95},
+}
+
+MOOD_SCORE_THRESHOLD = 0.22  # Lowered threshold for more flexible multi-mood assignment
+
+
+def mood_scoring_model(lyrics, sentiment, audio_features, nb_probs, bow_boost):
+    scores = {}
+    heartbreak_context = detect_heartbreak_context(lyrics)
+    for mood in MOOD_AUDIO_THRESHOLDS:
+        nb_score = nb_probs.get(mood, 0)
+        bow_values: List[float] = [float(v) for v in bow_boost.values()]
+        max_bow = 0.0
+        for v in bow_values:
+            if v > max_bow:
+                max_bow = v
+        bow_score = float(bow_boost.get(mood, 0)) / (max_bow + 1e-6) if max_bow > 0 else 0.0
+        af = audio_features
+        t = MOOD_AUDIO_THRESHOLDS[mood]
+        # Sentiment (scaled to mood)
+        sent_score = 1.0 if (mood == 'happy' and sentiment > t['sentiment']) else (
+            1.0 if (mood == 'sad' and sentiment < t['sentiment']) else 0.0)
+        audio_score = 0.0
+        if mood == 'happy':
+            if heartbreak_context:
+                # Strongly penalize happy if heartbreak context is present
+                scores[mood] = 0.0
+                continue
+            # Boost happy for strong audio features
+            if af['brightness'] > t['brightness'] and af['energy'] > t['energy'] and af['tempo'] > t['tempo']:
+                audio_score = 1.0
+            elif af['brightness'] > t['brightness'] or af['energy'] > t['energy'] or af['tempo'] > t['tempo']:
+                audio_score = 0.7
+        elif mood == 'energetic':
+            # Boost energetic for strong audio features
+            if af['tempo'] > t['tempo'] and af['energy'] > t['energy'] and af['zcr'] > t['zcr']:
+                audio_score = 1.0
+            elif af['tempo'] > t['tempo'] or af['energy'] > t['energy'] or af['zcr'] > t['zcr']:
+                audio_score = 0.7
+        elif mood == 'sad':
+            if heartbreak_context:
+                # Strongly boost sad if heartbreak context is present
+                audio_score = 1.0
+                sent_score = 1.0
+            elif sentiment < t['sentiment'] and af['brightness'] < t['brightness'] and af['energy'] < t['energy']:
+                audio_score = 1.0
+        elif mood == 'mysterious':
+            if af['brightness'] < t['brightness'] and af['zcr'] > t['zcr']:
+                audio_score = 1.0
+            elif af['brightness'] < t['brightness'] or af['zcr'] > t['zcr']:
+                audio_score = 0.7
+        elif mood == 'calm':
+            if af['tempo'] < t['tempo'] and af['energy'] < t['energy'] and af['zcr'] < t['zcr']:
+                audio_score = 1.0
+            elif af['tempo'] < t['tempo'] or af['energy'] < t['energy'] or af['zcr'] < t['zcr']:
+                audio_score = 0.7
+        elif mood == 'mad':
+            if sentiment < t['sentiment'] and af['energy'] > t['energy'] and af['zcr'] > t['zcr']:
+                audio_score = 1.0
+        elif mood == 'romantic':
+            if sentiment > t['sentiment'] and af['brightness'] > t['brightness']:
+                audio_score = 1.0
+        elif mood == 'focused':
+            if af['energy'] > t['energy'] and af['zcr'] < t['zcr']:
+                audio_score = 1.0
+            elif af['energy'] > t['energy'] or af['zcr'] < t['zcr']:
+                audio_score = 0.7
+        scores[mood] = (
+            MOOD_SCORING_WEIGHTS['naive_bayes'] * nb_score +
+            MOOD_SCORING_WEIGHTS['bag_of_words'] * bow_score +
+            MOOD_SCORING_WEIGHTS['sentiment'] * sent_score +
+            MOOD_SCORING_WEIGHTS['audio'] * audio_score
+        )
+    return scores
+
+
+def categorize_mood(tempo, energy, brightness, zcr, contrast, sentiment, lyrics=None):
+    audio_features = {'tempo': tempo, 'energy': energy, 'brightness': brightness, 'zcr': zcr, 'contrast': contrast}
+    bow_boost = bag_of_words_mood_boost(lyrics) if lyrics else {k:0 for k in MOOD_AUDIO_THRESHOLDS}
+    nb_probs = {mood: 0 for mood in MOOD_AUDIO_THRESHOLDS}
+    if lyrics and training_data:
+        tokens = naive_bayes_clf.tokenize(lyrics)
+        mood_scores = {}
+        for mood in naive_bayes_clf.mood_priors:
+            log_prob = np.log(naive_bayes_clf.mood_priors[mood])
+            for word in tokens:
+                if word in naive_bayes_clf.vocab:
+                    log_prob += np.log(naive_bayes_clf.word_probs[mood].get(word, 1 / (sum(naive_bayes_clf.mood_word_counts[mood].values()) + len(naive_bayes_clf.vocab))))
+            mood_scores[mood] = log_prob
+        max_log = max(mood_scores.values())
+        exp_scores = {mood: np.exp(score - max_log) for mood, score in mood_scores.items()}
+        total = sum(exp_scores.values())
+        nb_probs = {mood: exp_scores[mood] / total for mood in exp_scores}
+    scores = mood_scoring_model(lyrics, sentiment, audio_features, nb_probs, bow_boost)
+    filtered = [(mood, score) for mood, score in scores.items() if score >= MOOD_SCORE_THRESHOLD]
+    filtered.sort(key=lambda x: x[1], reverse=True)
+    top_moods = [mood for mood, score in filtered[:3]]
+    # Fallback if nothing meets threshold
+    if not top_moods:
+        max_key = None
+        max_value = float('-inf')
+        for k in scores:
+            if scores[k] > max_value:
+                max_value = scores[k]
+                max_key = k
+        top_moods = [max_key] if max_key is not None else []
+    return top_moods
 
 def fetch_lyrics_with_vagalume(song_title, artist_name):
     """Fetch lyrics from Vagalume public API as a fallback if Genius fails."""
@@ -357,7 +472,7 @@ def analyze_track(track, genius):
         if song:
             del song
 
-def analyze_user_library(sp, session=None):
+def analyze_user_library(sp, session=None, analysis_progress=None, user_id=None):
     """Analyze user's library using parallel processing."""
     print("Fetching user's library...")
     print("Creating Genius client...")
@@ -407,6 +522,9 @@ def analyze_user_library(sp, session=None):
                         if result:
                             analyzed_tracks.append(result)
                             print(f"Successfully analyzed track: {track['name']}")
+                            # Update progress if tracking is enabled
+                            if analysis_progress and user_id:
+                                analysis_progress[user_id]['analyzed_tracks'] += 1
                     except Exception as e:
                         print(f"Error processing track {track['name']}: {e}")
                         # Try to fetch lyrics with Vagalume as fallback
@@ -426,6 +544,9 @@ def analyze_user_library(sp, session=None):
                                 )
                                 analyzed_tracks.append(track)
                                 print(f"Successfully analyzed track with Vagalume fallback: {track['name']}")
+                                # Update progress if tracking is enabled
+                                if analysis_progress and user_id:
+                                    analysis_progress[user_id]['analyzed_tracks'] += 1
                         except Exception as fallback_error:
                             print(f"Fallback also failed for track {track['name']}: {fallback_error}")
                 
@@ -456,46 +577,6 @@ def analyze_user_library(sp, session=None):
         print(f"Error in analyze_user_library: {e}")
         import traceback; traceback.print_exc()
         return [], {}
-
-def categorize_mood(tempo, energy, brightness, zcr, contrast, sentiment, lyrics=None):
-    moods = []
-    # Use Naive Bayes classifier if lyrics and model are available
-    nb_moods = []
-    if lyrics and training_data:
-        nb_moods = naive_bayes_clf.predict(lyrics, threshold=0.15)  # Lower threshold for more multi-label
-        moods.extend(nb_moods)
-    # Bag-of-words boost (legacy, can be removed if NB is good)
-    bow_boost = bag_of_words_mood_boost(lyrics) if lyrics else {k:0 for k in ['romantic','mysterious','mad','sad','happy','energetic','calm','focused']}
-    # Audio/sentiment-based adjusters (only add if not already present)
-    if (sentiment > 0.5 and brightness > 2500 and energy > 0.07 or bow_boost['happy'] > 1) and 'happy' not in moods:
-        moods.append("happy")
-    if (sentiment < -0.3 and brightness < 2000 and energy < 0.06 or bow_boost['sad'] > 1) and 'sad' not in moods:
-        moods.append("sad")
-    if (tempo > 115 and energy > 0.08 and zcr > 0.09 or bow_boost['energetic'] > 1) and 'energetic' not in moods:
-        moods.append("energetic")
-    if (tempo < 90 and energy < 0.05 and zcr < 0.05 and contrast < 20 or bow_boost['calm'] > 1) and 'calm' not in moods:
-        moods.append("calm")
-    if (sentiment < -0.2 and energy > 0.07 and zcr > 0.08 or bow_boost['mad'] > 1) and 'mad' not in moods:
-        moods.append("mad")
-    if (sentiment > 0.2 and 85 < tempo < 115 and brightness > 2200 and zcr < 0.07 or bow_boost['romantic'] > 1) and 'romantic' not in moods:
-        moods.append("romantic")
-    if (85 <= tempo <= 115 and 0.04 <= energy <= 0.07 and -0.2 < sentiment < 0.2 and contrast < 22 and zcr < 0.07 or bow_boost['focused'] > 1) and 'focused' not in moods:
-        moods.append("focused")
-    if (80 <= tempo <= 120 and brightness < 1800 and contrast > 22 and -0.4 < sentiment < 0.2 or bow_boost['mysterious'] > 1) and 'mysterious' not in moods:
-        moods.append("mysterious")
-    # Fallbacks: assign most likely if nothing else matches
-    if not moods:
-        if tempo > 120:
-            moods.append("energetic")
-        elif tempo < 90:
-            moods.append("calm")
-        elif sentiment > 0.1:
-            moods.append("happy")
-        elif sentiment < -0.1:
-            moods.append("sad")
-        else:
-            moods.append("happy")
-    return moods
 
 def get_tracks_for_mood(mood_uris, mood, limit=20):
     """Get up to 'limit' URIs for a mood from the session dict."""
