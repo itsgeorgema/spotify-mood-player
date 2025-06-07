@@ -21,7 +21,7 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 - Backend: Flask, Python
 - Database: MySQL
 - Infrastructure: Docker
-- APIs and Libaries: iTunes Search API, Genius API, Spotify API, Librosa, ThreadPoolExecutor, Gevent, NLTK
+- APIs and Libraries: iTunes Search API, Genius API, Spotify API, Librosa, ThreadPoolExecutor, Gevent, NLTK
 - Build/Dev Tools: Vite, Node.js, npm
 
 ## Setup
@@ -59,9 +59,9 @@ VITE_BACKEND_API_URL=http://127.0.0.1:5001/api (URL to your backend deployment)
 ### 3. Install & Run
 
 #### Backend
-- download MySQL and set your root password, then download Docker Desktop. 
+- Download MySQL and set your root password, then download Docker Desktop. 
     - Docker Compose will be used to containerize backend and MySQL database service
-    - compose yml is already defined to containerize services and database schema is already defined
+    - Compose yml is already defined to containerize services and database schema is already defined
 ```bash
 cd backend
 docker compose up --build
@@ -70,11 +70,17 @@ docker compose up --build
 ```
 
 #### Frontend
+**in root directory (spotify-mood-player)
 ```bash
-cd frontend
 npm install
 npm run dev
 ```
+
+## Lyrics Training Data
+
+- The backend uses a `training_data.csv` file for lyrics-based mood classification using naive bayes theorem probabilities
+- Lyrics are pre-cleaned: no leading/trailing spaces, no verse indicators, properly quoted, and all vulgarities/curse words are censored with asterisks.
+- If you add new lyrics, ensure they follow this format for best results.
 
 ## Performance Features
 
@@ -107,7 +113,7 @@ exit
 # Then run:
 mysql -u root -p your_db_name < mysql-init.sql
 ```
-- make sure your .env values match what you create in MySQL
+- Make sure your .env values match what you create in MySQL
 
 ---
 
