@@ -472,7 +472,7 @@ def analyze_track(track, genius):
         if song:
             del song
 
-def analyze_user_library(sp, session=None, analysis_progress=None, user_id=None):
+def analyze_user_library(sp, session=None):
     """Analyze user's library using parallel processing."""
     print("Fetching user's library...")
     print("Creating Genius client...")
@@ -522,9 +522,6 @@ def analyze_user_library(sp, session=None, analysis_progress=None, user_id=None)
                         if result:
                             analyzed_tracks.append(result)
                             print(f"Successfully analyzed track: {track['name']}")
-                            # Update progress if tracking is enabled
-                            if analysis_progress and user_id:
-                                analysis_progress[user_id]['analyzed_tracks'] += 1
                     except Exception as e:
                         print(f"Error processing track {track['name']}: {e}")
                         # Try to fetch lyrics with Vagalume as fallback
@@ -544,9 +541,6 @@ def analyze_user_library(sp, session=None, analysis_progress=None, user_id=None)
                                 )
                                 analyzed_tracks.append(track)
                                 print(f"Successfully analyzed track with Vagalume fallback: {track['name']}")
-                                # Update progress if tracking is enabled
-                                if analysis_progress and user_id:
-                                    analysis_progress[user_id]['analyzed_tracks'] += 1
                         except Exception as fallback_error:
                             print(f"Fallback also failed for track {track['name']}: {fallback_error}")
                 
