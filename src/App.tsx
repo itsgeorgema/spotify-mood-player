@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import PlayerPage from './pages/PlayerPage';
 import LoginSuccess from './pages/LoginSuccess'; 
 import MusicAnalysisLoading from './pages/MusicAnalysisLoading';
-import { SpotifyDevice } from './types';
 import { apiClient } from './api/client';
 import './App.css';
 
@@ -21,13 +20,52 @@ export const getApiEndpoint = (pathStartingWithApi: string) => {
   }
 };
 
+// Types
+interface SpotifyDevice {
+  id: string;
+  name: string;
+  is_active: boolean;
+  is_private_session: boolean;
+  is_restricted: boolean;
+  type: string;
+  volume_percent: number;
+}
+
+interface Message {
+  type: 'success' | 'warning';
+  text: string;
+}
+
+interface LoginProps {
+  onLogin: () => void;
+}
+
+interface MoodSelectorProps {
+  onMoodSelect: (mood: string) => void;
+  selectedMood: string | null;
+  onLogout: () => Promise<void>;
+}
+
+interface DeviceSelectorProps {
+  devices: SpotifyDevice[];
+  selectedDevice: SpotifyDevice | null;
+  onDeviceSelect: (device: SpotifyDevice | null) => void;
+  onPlay: (deviceId: string) => Promise<void>;
+  isLoading: boolean;
+}
+
+interface MessageProps {
+  type: 'success' | 'warning';
+  children: React.ReactNode;
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedMood, setSelectedMood] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>('');
+  const [message, setMessage] = useState<Message | null>(null);
   const [devices, setDevices] = useState<SpotifyDevice[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<SpotifyDevice | null>(null);
 
   const checkAuthStatus = useCallback(async () => {
     try {
@@ -67,13 +105,13 @@ function App() {
     }
     else{
       setDevices([]);
-      setSelectedDeviceId(null);
+      setSelectedDevice(null);
     }
   }, [isAuthenticated, fetchDevices]);
 
   const handleLogin = () => {
     console.log('Initiating Spotify login...');
-    setMessage('Redirecting to Spotify login...');
+    setMessage({ type: 'warning', text: 'Redirecting to Spotify login...' });
     apiClient.initiateLogin();
   };
 
@@ -86,15 +124,18 @@ function App() {
       if (response.ok) {
         setIsAuthenticated(false);
         setSelectedMood(null);
+        setDevices([]);
+        setSelectedDevice(null);
+        setMessage(null);
       }
     } catch (error) {
       console.error('Logout failed:', error);
     }
   };
 
-const handleMoodSelect = async (mood: string) => {
-    if (!selectedDeviceId) {
-        setMessage('Please select a playback device first.');
+  const handleMoodSelect = async (mood: string) => {
+    if (!selectedDevice) {
+        setMessage({ type: 'warning', text: 'Please select a playback device first.' });
         return;
     }
 
@@ -114,7 +155,7 @@ const handleMoodSelect = async (mood: string) => {
 
         // Handle case where analysis is not done yet
         if (moodCheckResponse.status === 400 && moodData.error && moodData.error.includes('No analyzed tracks in session')) {
-            setMessage('Your music library is still being analyzed. Please wait a moment and try again.');
+            setMessage({ type: 'warning', text: 'Your music library is still being analyzed. Please wait a moment and try again.' });
             setSelectedMood(null);
             return;
         }
@@ -125,14 +166,14 @@ const handleMoodSelect = async (mood: string) => {
 
         // If no tracks for this mood, show message and return early
         if (!moodData.track_uris || moodData.track_uris.length === 0) {
-            setMessage(`No ${mood} tracks found in your library. Try another mood.`);
+            setMessage({ type: 'warning', text: `No ${mood} tracks found in your library. Try another mood.` });
             setSelectedMood(null);
             return;
         }
 
         // If we have tracks, proceed with playback
         setIsLoading(true);
-        setMessage(`Loading ${mood} playlist...`);
+        setMessage({ type: 'warning', text: `Loading ${mood} playlist...` });
 
         const playResponse = await fetch(getApiEndpoint('/api/play'), {
             method: 'POST',
@@ -142,7 +183,7 @@ const handleMoodSelect = async (mood: string) => {
             credentials: 'include',
             body: JSON.stringify({
                 track_uris: moodData.track_uris,
-                device_id: selectedDeviceId
+                device_id: selectedDevice.id
             })
         });
 
@@ -151,11 +192,11 @@ const handleMoodSelect = async (mood: string) => {
             throw new Error(errorData.error || 'Failed to play tracks');
         }
 
-        setMessage(`Playing ${mood} music...`);
+        setMessage({ type: 'success', text: `Playing ${mood} music...` });
 
     } catch (error) {
         console.error('Error in handleMoodSelect:', error);
-        setMessage(error instanceof Error ? error.message : 'Failed to play tracks. Please try again.');
+        setMessage({ type: 'warning', text: error instanceof Error ? error.message : 'Failed to play tracks. Please try again.' });
         setSelectedMood(null);
     } finally {
         setIsLoading(false);
@@ -167,42 +208,65 @@ const handleMoodSelect = async (mood: string) => {
   }, [checkAuthStatus]);
 
   return (
-  <Router>
-    <Routes>
-      <Route path="/callback" 
-        element={
-          <LoginSuccess 
-            checkAuthStatus={checkAuthStatus}
+    <Router>
+      <div className="app">
+        {message && (
+          <div className={`message ${message.type === 'warning' ? 'warning-message' : ''}`}>
+            {message.text}
+          </div>
+        )}
+        <Routes>
+          <Route path="/callback" 
+            element={
+              <LoginSuccess 
+                checkAuthStatus={checkAuthStatus}
+              />
+            } 
           />
-        } 
-      />
-      <Route path="/player" 
-        element={
-          <PlayerPage
-            isAuthenticated={isAuthenticated}
-            isLoading={isLoading}
-            selectedMood={selectedMood}
-            message={message}
-            devices={devices}
-            selectedDeviceId={selectedDeviceId}
-            setSelectedDeviceId={setSelectedDeviceId}
-            handleLogout={handleLogout}
-            handleMoodSelect={handleMoodSelect}
+          <Route path="/player" 
+            element={
+              <PlayerPage
+                isAuthenticated={isAuthenticated}
+                isLoading={isLoading}
+                selectedMood={selectedMood}
+                message={message?.text || ''}
+                devices={devices}
+                selectedDeviceId={selectedDevice?.id || ''}
+                setSelectedDeviceId={(id: string) => setSelectedDevice(devices.find(d => d.id === id) || null)}
+                handleLogout={handleLogout}
+                handleMoodSelect={handleMoodSelect}
+              />
+            } 
           />
-        } 
-      />
-      <Route path="/" 
-        element={
-          <LoginPage
-            isAuthenticated={isAuthenticated}
-            handleLogin={handleLogin}
-            isLoading={isLoading}
+          <Route path="/" 
+            element={
+              isAuthenticated ? (
+                <PlayerPage
+                  isAuthenticated={isAuthenticated}
+                  isLoading={isLoading}
+                  selectedMood={selectedMood}
+                  message={message?.text || ''}
+                  devices={devices}
+                  selectedDeviceId={selectedDevice?.id || ''}
+                  setSelectedDeviceId={(id: string) => setSelectedDevice(devices.find(d => d.id === id) || null)}
+                  handleLogout={handleLogout}
+                  handleMoodSelect={handleMoodSelect}
+                />
+              ) : (
+                <LoginPage
+                  isAuthenticated={isAuthenticated}
+                  handleLogin={handleLogin}
+                  isLoading={isLoading}
+                />
+              )
+            }
           />
-        } 
-      />
-      <Route path="/analyzing" element={<MusicAnalysisLoading />} />
-    </Routes>
-  </Router>
-);}
+          <Route path="/analyzing" element={<MusicAnalysisLoading />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </Router>
+  );
+}
 
 export default App;

@@ -1,0 +1,145 @@
+/* Login Page Styles */
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--spacing-xl);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
+}
+
+.login-container::before {
+  display: none;
+}
+
+.login-container::after {
+  display: none;
+}
+
+.title-container {
+  background: transparent;
+  padding: 0;
+  border-radius: var(--border-radius-lg);
+  position: relative;
+  overflow: visible;
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: var(--spacing-xl);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  margin-bottom: 0;
+  background: linear-gradient(135deg, #1DB954, #1ed760 60%, #fff 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: 0 0 16px #1db954, 0 2px 8px rgba(29,185,84,0.08);
+  letter-spacing: -1px;
+  text-align: center;
+  animation: fadeIn 0.5s ease-out 0.2s both, bounce-smooth 2.2s ease-in-out infinite;
+}
+
+.login-centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100vw;
+  min-width: 100vw;
+  padding: 0;
+  margin: 0;
+}
+
+.login-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  flex: 1;
+  margin-top: 0;
+  justify-content: center;
+}
+
+.login-top-text {
+  margin-bottom: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.login-modal {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  width: 100%;
+  padding: 0;
+  min-width: unset;
+  min-height: unset;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-modal::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, var(--primary-color), var(--primary-hover), var(--primary-color));
+  border-radius: calc(var(--border-radius-lg) + 2px);
+  z-index: -1;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.login-modal .subtitle {
+  font-size: var(--font-size-lg);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-md);
+  opacity: 0.8;
+  animation: float-in 0.7s cubic-bezier(0.4,0,0.2,1) 0.3s both;
+}
+
+.login-modal .tagline {
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-lg);
+  animation: float-in 0.7s cubic-bezier(0.4,0,0.2,1) 0.5s both;
+}
+
+.login-modal .spotify-button {
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(45deg, var(--primary-color), var(--primary-hover));
+  border: none;
+  padding: var(--spacing-md) var(--spacing-xl);
+  border-radius: var(--border-radius-xl);
+  color: white;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+  animation: float-in 0.7s cubic-bezier(0.4,0,0.2,1) 0.7s both;
+  margin-top: var(--spacing-md);
+}
+
+.login-modal .spotify-button:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(29, 185, 84, 0.4);
+} 

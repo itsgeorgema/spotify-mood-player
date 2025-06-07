@@ -1,0 +1,81 @@
+/* Player Page Styles */
+.player-header {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.5rem;
+  margin-bottom: 1.5rem;
+  background: transparent;
+}
+
+.mood-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: var(--spacing-md);
+  width: 80vw;
+  max-width: 1200px;
+  height: 50vh;
+  margin: 0 auto var(--spacing-xl) auto;
+  align-items: stretch;
+  justify-items: stretch;
+  background: transparent;
+}
+
+.device-selector {
+  margin: var(--spacing-xl) auto;
+  text-align: center;
+  max-width: 400px;
+  padding: 0 var(--spacing-md);
+  position: relative;
+  z-index: 2;
+}
+
+.device-selector h3 {
+  margin-bottom: var(--spacing-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+}
+
+.device-selector select {
+  width: 100%;
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-color);
+  background-color: var(--background-lighter);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1.5rem;
+  position: relative;
+  z-index: 3;
+}
+
+.device-selector select:hover {
+  background-color: var(--background-hover);
+}
+
+.device-selector select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(29, 185, 84, 0.2);
+}
+
+.spotify-button.logout {
+  background-color: var(--background-lighter);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.spotify-button.logout:hover {
+  background-color: var(--background-hover);
+  color: var(--text-primary);
+} 

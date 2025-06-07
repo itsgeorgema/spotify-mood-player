@@ -1,66 +1,192 @@
-.loading-container {
+@property --angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.loading-bg-conic {
+  width: 420px;
+  height: 380px;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: var(--border-radius-xl);
+  background: inherit;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.loading-bg-conic::before,
+.loading-bg-conic::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--border-radius-xl);
+  z-index: 1;
+}
+
+.loading-bg-conic::before {
+  background: conic-gradient(from var(--angle), #1DB954 0deg 120deg, transparent 120deg 360deg);
+  filter: blur(24px);
+  opacity: 0.7;
+  z-index: 1;
+  transition: background 0.3s;
+}
+
+.loading-bg-conic::after {
+  background: conic-gradient(from var(--angle), #1DB954 0deg 120deg, transparent 120deg 360deg);
+  opacity: 1;
+  z-index: 2;
+  transition: background 0.3s;
+}
+
+.loading-bg-conic-inner {
+  display: none;
+}
+
+@keyframes spinAngle {
+  from {
+    --angle: 0deg;
+  }
+  to {
+    --angle: 360deg;
+  }
+}
+
+.loading-bg-conic,
+.loading-bg-conic::before,
+.loading-bg-conic::after {
+  animation: spinAngle 3s linear infinite;
+}
+
+.loading-modal {
+  background: rgba(24, 24, 24, 0.98);
+  border-radius: var(--border-radius-xl);
+  width: 360px;
+  height: 360px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  padding: 20px;
-  position: fixed;
+  box-shadow: 0 12px 48px 0 rgba(0,0,0,0.45), 0 1.5px 8px 0 rgba(29,185,84,0.08);
+  overflow: hidden;
+  z-index: 2;
+  min-width: unset;
+  min-height: unset;
+  padding: 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.loading-modal::before {
+  display: none;
+}
+
+.loading-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 18px;
+  background: linear-gradient(135deg, #1DB954, #1ed760 60%, #fff 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 2px 8px rgba(29,185,84,0.08);
+  letter-spacing: -1px;
+  text-align: center;
+}
+
+.loading-message {
+  margin: 0 0 28px 0;
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.6;
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
+}
+
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  margin: 0 0 12px 0;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(29,185,84,0.08);
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1DB954 0%, #1ed760 100%);
+  border-radius: 2px;
+  transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,0.25),transparent);
+  animation: progressShine 1.5s linear infinite;
 }
 
-.loading-modal {
-  background-color: #282828;
-  border-radius: 8px;
-  padding: 40px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  max-width: 400px;
-  width: 90%;
-  margin: auto;
-  position: relative;
+@keyframes progressShine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
-.spinner {
-  border: 4px solid rgba(29, 185, 84, 0.1);
-  border-radius: 50%;
-  border-top: 4px solid #1DB954;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-p {
-  margin-top: 20px;
-  font-size: 16px;
-  color: #FFFFFF;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+.progress-text {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  margin-top: 0;
   text-align: center;
-  line-height: 1.5;
-  width: 100%;
-  padding: 0 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   .loading-modal {
-    padding: 30px 20px;
-    width: 85%;
+    padding: 14px 4px 10px 4px;
+    max-width: 98vw;
   }
-  
-  p {
-    font-size: 14px;
-    padding: 0 5px;
+  .loading-title {
+    font-size: 1.3rem;
   }
-} 
+  .loading-message {
+    font-size: 1rem;
+  }
+  .progress-bar {
+    height: 3px;
+  }
+  .progress-text {
+    font-size: 0.95rem;
+  }
+}
+
+/* .app should have the green gradient background */
+.loading-app-bg {
+  background: linear-gradient(135deg, #1DB954 0%, #1ed760 100%);
+  min-height: 100vh;
+  width: 100vw;
+  position: relative;
+  overflow: hidden;
+  display: block;
+}
+
+.loading-center-stack {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
