@@ -27,8 +27,8 @@
 
 .loading-bg-conic::before {
   background: conic-gradient(from var(--angle), #1DB954 0deg 120deg, transparent 120deg 360deg);
-  filter: blur(32px);
-  opacity: 0.9;
+  filter: blur(24px);
+  opacity: .9;
   z-index: 1;
   transition: background 0.3s;
 }
@@ -38,7 +38,7 @@
   opacity: 0.8;
   z-index: 2;
   transition: background 0.3s;
-  filter: blur(8px);
+  filter: blur(1px);
 }
 
 .loading-bg-conic-inner {
