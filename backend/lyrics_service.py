@@ -71,7 +71,6 @@ def create_genius_client():
             timeout=30,
             retries=3,
             sleep_time=5,  # Increased sleep time between requests
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         )
         
         # Test the token with a simple request
