@@ -45,7 +45,58 @@
   text-shadow: 0 0 16px #1db954, 0 2px 8px rgba(29,185,84,0.08);
   letter-spacing: -1px;
   text-align: center;
-  animation: fadeIn 0.5s ease-out 0.2s both, bounce-smooth 2.2s ease-in-out infinite;
+}
+
+@keyframes bounce-smooth {
+  0%   { transform: translateY(0); }
+  5%   { transform: translateY(-1.5px); }
+  10%  { transform: translateY(-3px); }
+  15%  { transform: translateY(-4px); }
+  20%  { transform: translateY(-5px); }
+  25%  { transform: translateY(-5.5px); }
+  30%  { transform: translateY(-5px); }
+  35%  { transform: translateY(-4px); }
+  40%  { transform: translateY(-3px); }
+  45%  { transform: translateY(-1.5px); }
+  50%  { transform: translateY(0); }
+  55%  { transform: translateY(-1.5px); }
+  60%  { transform: translateY(-3px); }
+  65%  { transform: translateY(-4px); }
+  70%  { transform: translateY(-5px); }
+  75%  { transform: translateY(-5.5px); }
+  80%  { transform: translateY(-5px); }
+  85%  { transform: translateY(-4px); }
+  90%  { transform: translateY(-2px); }
+  95%  { transform: translateY(-1px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes float-in {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scale(0.96);
+    filter: blur(8px);
+  }
+  30% {
+    opacity: 0.4;
+    transform: translateY(18px) scale(0.98);
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 0.85;
+    transform: translateY(-6px) scale(1.01);
+    filter: blur(1.5px);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1);
+    filter: blur(0.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
 }
 
 .login-centered {

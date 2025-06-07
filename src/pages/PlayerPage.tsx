@@ -1,4 +1,3 @@
-import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { SpotifyDevice } from '../types';
 import MusicAnalysisLoading from './MusicAnalysisLoading';
@@ -50,38 +49,38 @@ function PlayerPage(props: PlayerPageProps) {
 
   return (
     <div
-      className="app fade-in-up delay-1"
+      className="app float-in-delay-1"
     >
       <header className="player-header">
-        <h1 className="login-title fade-in-up delay-3">Mood Player</h1>
-        <p className="subtitle fade-in-up delay-4">Select your mood and device</p>
-        <p className="tagline fade-in-up delay-5" style={{ color: '#b3b3b3' }}>Let your feelings pick the soundtrack</p>
+        <h1 className="login-title float-in-delay-2">Mood Player</h1>
+        <p className="subtitle float-in-delay-3">Select your mood and device</p>
+        <p className="tagline float-in-delay-4" style={{ color: '#b3b3b3' }}>Let your feelings pick the soundtrack</p>
       </header>
       <main
-        className="fade-in-up delay-6"
+        className="float-in-delay-5"
       >
-        <div className="mood-grid fade-in-up delay-7">
+        <div className="mood-grid float-in-delay-6">
           {moods.map((mood, idx) => (
             <button
               key={mood.id}
               onClick={() => handleMoodSelect(mood.id)}
-              className={`mood-button fade-in-up delay-${8 + idx} ${selectedMood === mood.id ? 'selected' : ''} mood-${mood.id}`}
+              className={`mood-button float-in-delay-${7 + idx} ${selectedMood === mood.id ? 'selected' : ''} mood-${mood.id}`}
             >
-              <span className="button-text fade-in-up delay-${8 + idx}">{mood.label}</span>
+              <span className={`button-text float-in-delay-${7 + idx}`}>{mood.label}</span>
             </button>
           ))}
         </div>
         {devices.length > 0 && (
-          <div className="device-selector fade-in-up delay-17" style={{ marginBottom: 24 }}>
-            <h3 className="fade-in-up delay-18">Select Device:</h3>
+          <div className="device-selector float-in-delay-17" style={{ marginBottom: 24 }}>
+            <h3 className="float-in-delay-18">Select Device:</h3>
             <select
-              className="fade-in-up delay-19"
+              className="float-in-delay-19"
               value={selectedDeviceId || ''}
               onChange={(e) => setSelectedDeviceId(e.target.value)}
             >
               <option value="">Select a device</option>
               {devices.map((device, i) => (
-                <option key={device.id || 'unknown_device'} value={device.id || ''} className={`fade-in-up delay-${20 + i}`}>
+                <option key={device.id || 'unknown_device'} value={device.id || ''} className={`float-in-delay-${20 + i}`}>
                   {device.name} ({device.type})
                 </option>
               ))}
@@ -89,18 +88,18 @@ function PlayerPage(props: PlayerPageProps) {
           </div>
         )}
         {devices.length === 0 && (
-          <p className="warning-message fade-in-up delay-20">
+          <p className="warning-message float-in-delay-20">
             No Spotify devices found. Please open Spotify on one of your devices and reload the page.
           </p>
         )}
-        <button onClick={handleLogout} className="spotify-button logout fade-in-up delay-21" style={{ marginTop: 24 }}>
+        <button onClick={handleLogout} className="spotify-button logout float-in-delay-21" style={{ marginTop: 24 }}>
           Logout
         </button>
-        {message && <p className="message fade-in-up delay-22" style={{ marginTop: 18 }}>{message}</p>}
+        {message && <p className="message float-in-delay-22" style={{ marginTop: 18 }}>{message}</p>}
       </main>
-      <footer className="fade-in-up delay-23" style={{ marginTop: 32, fontSize: '0.95rem', color: '#b3b3b3', textAlign: 'center' }}>
-        <p className="fade-in-up delay-24">Ensure Spotify is running on one of your devices. If you don't see your device listed, try refreshing the page.</p>
-        <p className="fade-in-up delay-25">Spotify Premium may be required for certain playback controls.</p>
+      <footer className="float-in-delay-23" style={{ marginTop: 32, fontSize: '0.95rem', color: '#b3b3b3', textAlign: 'center' }}>
+        <p className="float-in-delay-24">Ensure Spotify is running on one of your devices. If you don't see your device listed, try refreshing the page.</p>
+        <p className="float-in-delay-25">Spotify Premium may be required for certain playback controls.</p>
       </footer>
     </div>
   );
