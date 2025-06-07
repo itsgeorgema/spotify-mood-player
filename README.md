@@ -99,6 +99,25 @@ npm install
 npm run dev
 ```
 
+### 4. Access the App
+
+- Visit [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser.
+
+### 5. Database
+
+- If not using Docker Compose, setup schema manually in instance:
+```bash
+mysql -u root -p
+# In the MySQL shell:
+CREATE DATABASE your_db_name;
+exit
+# Then run:
+mysql -u root -p your_db_name < mysql-init.sql
+```
+- Make sure your .env values match what you create in MySQL
+
+---
+
 ## Lyrics Training Data
 
 - The backend uses a `training_data.csv` file for lyrics-based mood classification using naive bayes theorem probabilities
@@ -112,14 +131,6 @@ npm run dev
 - **Service Orchestration**: Docker Compose with health checks ensures proper startup order
 - **Memory Management**: Batch processing with proper resource cleanup
 - **API Rate Limiting**: Built-in delays to respect external API limits
-
-## Development Notes
-
-- The backend uses Gunicorn with Gevent workers for async processing
-- Database connections are automatically retried on startup
-- Track analysis is parallelized for better performance
-- Memory usage is optimized through batch processing
-- API rate limits are respected with built-in delays
 
 ## Production Limitations
 
@@ -145,6 +156,14 @@ cloudflared tunnel --url http://127.0.0.1:5001
    - Set the `VITE_BACKEND_API_URL` environment variable in your deployed frontend
    - Set the `SPOTIPY_REDIRECT_URI` env variable in your local backend .env
    - Update the redirect URI in your Spotify Developer Dashboard
+
+## Development Notes
+
+- The backend uses Gunicorn with Gevent workers for async processing
+- Database connections are automatically retried on startup
+- Track analysis is parallelized for better performance
+- Memory usage is optimized through batch processing
+- API rate limits are respected with built-in delays
 
 ## Challenges Overcome
 
@@ -233,29 +252,4 @@ Planned enhancements to expand the project's capabilities:
    - Enhance mood detection accuracy and expand training set (some songs are still categorized inaccurately because training set is relatively limited)
    - Add more mood categories with the ability to accurately categorize into the specific moods
    - Implement genre-based analysis
-
-### 4. Access the App
-
-- Visit [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser.
-
-### 5. Database
-
-- If not using Docker Compose, setup schema manually in instance:
-```bash
-mysql -u root -p
-# In the MySQL shell:
-CREATE DATABASE your_db_name;
-exit
-# Then run:
-mysql -u root -p your_db_name < mysql-init.sql
-```
-- Make sure your .env values match what you create in MySQL
-
----
-
-## Notes
-
-- Only whitelisted Spotify users can log in (see Spotify Developer Dashboard).
-- To re-analyze your library, log out and log back in.
-- For any issues, check backend and frontend logs.
 
