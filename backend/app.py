@@ -28,7 +28,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
 # --- Environment-Specific Configuration ---
 IS_PRODUCTION = os.getenv('FLASK_ENV') == 'production'
-backend_port_local_dev = os.getenv('PORT', '5001') # Default for local, Render sets its own PORT env var for Gunicorn
+backend_port_local_dev = os.getenv('PORT', '5001')
 
 if IS_PRODUCTION:
     fly_app_hostname = os.getenv('FLY_APP_HOSTNAME')
@@ -50,9 +50,9 @@ if IS_PRODUCTION:
 else: # Local development
     app.config['SERVER_NAME'] = f"127.0.0.1:{backend_port_local_dev}"
     app.config.update(
-        SESSION_COOKIE_SECURE=True,  # Set to True in production
+        SESSION_COOKIE_SECURE=False,  # Set True if tunneling
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='None',
+        SESSION_COOKIE_SAMESITE='Lax', #Set to 'None' if tunneling
         SESSION_COOKIE_PATH='/',
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
@@ -69,16 +69,7 @@ sys.stdout.flush()
 
 # CORS CONFIG
 frontend_url_from_env = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
-ngrok_url = os.getenv("NGROK_URL")
-localtunnel_url = os.getenv("LOCAL_TUNNEL_URL")  # Add support for LocalTunnel
-
 allowed_origins = [frontend_url_from_env, "https://spotify-mood-player.vercel.app"]
-if ngrok_url:
-    allowed_origins.append(ngrok_url)
-if localtunnel_url:
-    allowed_origins.append(localtunnel_url)
-# For quick testing, you can also hardcode your current localtunnel URL:
-# allowed_origins.append("https://your-localtunnel-url.loca.lt")
 
 CORS(app, 
      resources={r"/api/*": {
