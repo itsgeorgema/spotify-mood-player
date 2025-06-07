@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import PlayerPage from './pages/PlayerPage';
 import LoginSuccess from './pages/LoginSuccess'; 
 import MusicAnalysisLoading from './pages/MusicAnalysisLoading';
+import Failure from './pages/Failure';
 import { apiClient } from './api/client';
 import './App.css';
 
@@ -223,6 +224,7 @@ function App() {
               />
             } 
           />
+          <Route path="/failure" element={<Failure handleLogout={handleLogout} />} />
           <Route path="/player" 
             element={
               <PlayerPage
