@@ -5,16 +5,15 @@
 }
 
 .loading-bg-conic {
-  width: 420px;
-  height: 380px;
-  z-index: 1;
-  pointer-events: none;
-  border-radius: var(--border-radius-xl);
-  background: inherit;
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  border-radius: var(--border-radius-xl);
+  pointer-events: none;
+  background: inherit;
+  overflow: hidden;
 }
 
 .loading-bg-conic::before,
@@ -22,7 +21,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: var(--border-radius-xl);
+  border-radius: var(--border-radius-xl) !important;
   z-index: 1;
 }
 
@@ -60,11 +59,22 @@
   animation: spinAngle 3s linear infinite;
 }
 
+.loading-modal-wrapper {
+  position: relative;
+  width: clamp(220px, 40vw, 340px);
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .loading-modal {
+  position: relative;
+  z-index: 2;
+  width: 98%;
+  height: 98%;
   background: rgba(24, 24, 24, 0.98);
-  border-radius: var(--border-radius-xl);
-  width: 360px;
-  height: 360px;
+  border-radius: var(--border-radius-xl) !important;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -72,14 +82,8 @@
   justify-content: center;
   box-shadow: 0 12px 48px 0 rgba(0,0,0,0.45), 0 1.5px 8px 0 rgba(29,185,84,0.08);
   overflow: hidden;
-  z-index: 2;
-  min-width: unset;
-  min-height: unset;
-  padding: 0;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  padding: clamp(0.7rem, 2vw, 1.2rem);
+  overflow-y: auto;
 }
 
 .loading-modal::before {
@@ -87,10 +91,10 @@
 }
 
 .loading-title {
-  font-size: 2.2rem;
+  font-size: clamp(1.1rem, 3vw, 2.1rem);
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 18px;
+  margin-bottom: clamp(0.5rem, 2vw, 1.1rem);
   background: linear-gradient(135deg, #1DB954, #1ed760 60%, #fff 100%);
   background-clip: text;
   -webkit-background-clip: text;
@@ -101,8 +105,8 @@
 }
 
 .loading-message {
-  margin: 0 0 28px 0;
-  font-size: 1.15rem;
+  margin-bottom: clamp(0.5rem, 2vw, 1.1rem);
+  font-size: clamp(0.9rem, 2vw, 1.1rem);
   color: var(--text-secondary);
   text-align: center;
   line-height: 1.6;
@@ -112,10 +116,10 @@
 
 .progress-bar {
   width: 100%;
-  height: 4px;
+  height: 3px;
   background: rgba(255,255,255,0.08);
   border-radius: 2px;
-  margin: 0 0 12px 0;
+  margin-bottom: clamp(0.5rem, 1vw, 0.8rem);
   overflow: hidden;
   position: relative;
   box-shadow: 0 2px 8px rgba(29,185,84,0.08);
@@ -147,7 +151,7 @@
 }
 
 .progress-text {
-  font-size: 1.1rem;
+  font-size: clamp(0.85rem, 1.5vw, 1.05rem);
   color: var(--text-secondary);
   margin-top: 0;
   text-align: center;
@@ -157,9 +161,15 @@
 }
 
 @media (max-width: 600px) {
+  .loading-modal-wrapper {
+    width: 96vw;
+    max-width: 96vw;
+  }
   .loading-modal {
-    padding: 14px 4px 10px 4px;
-    max-width: 98vw;
+    width: 98%;
+    max-width: none;
+    min-width: 100px;
+    min-height: 100px;
   }
   .loading-title {
     font-size: 1.3rem;
@@ -189,4 +199,7 @@
   position: relative;
   width: 100vw;
   height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

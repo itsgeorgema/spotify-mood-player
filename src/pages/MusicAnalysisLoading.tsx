@@ -36,17 +36,19 @@ const MusicAnalysisLoading: React.FC = () => {
   return (
     <div className="app loading-app-bg">
       <div className="loading-center-stack">
-        <div className="loading-bg-conic" />
-        <div className="loading-modal">
-          <h2 className="loading-title">Preparing Your Experience</h2>
-          <p className="loading-message">{loadingText}</p>
-          <div className="progress-bar">
-            <div 
-              className="progress-fill" 
-              style={{ width: `${progress}%` }}
-            />
+        <div className="loading-modal-wrapper">
+          <div className="loading-bg-conic" />
+          <div className="loading-modal">
+            <h2 className="loading-title">Preparing Your Experience</h2>
+            <p className="loading-message">{loadingText}</p>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill" 
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className="progress-text">{Math.round(progress)}%</span>
           </div>
-          <span className="progress-text">{Math.round(progress)}%</span>
         </div>
       </div>
     </div>
