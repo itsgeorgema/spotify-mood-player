@@ -66,7 +66,6 @@ function App() {
   const [message, setMessage] = useState<Message | null>(null);
   const [devices, setDevices] = useState<SpotifyDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<SpotifyDevice | null>(null);
-  const [isAnalysisDone, setIsAnalysisDone] = useState<boolean>(false);
 
   const checkAuthStatus = useCallback(async () => {
     try {
@@ -100,23 +99,6 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  const checkAnalysisStatus = useCallback(async () => {
-    try {
-      const response = await fetch(getApiEndpoint('/api/sentiment_analysis'), {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const data = await response.json();
-      if (response.ok && data.message && data.message.toLowerCase().includes('analyzed')) {
-        setIsAnalysisDone(true);
-      } else {
-        setIsAnalysisDone(false);
-      }
-    } catch (error) {
-      setIsAnalysisDone(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (isAuthenticated){
       fetchDevices();
@@ -126,18 +108,6 @@ function App() {
       setSelectedDevice(null);
     }
   }, [isAuthenticated, fetchDevices]);
-
-  useEffect(() => {
-    checkAuthStatus();
-  }, [checkAuthStatus]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      checkAnalysisStatus();
-    } else {
-      setIsAnalysisDone(false);
-    }
-  }, [isAuthenticated, checkAnalysisStatus]);
 
   const handleLogin = () => {
     console.log('Initiating Spotify login...');
@@ -233,6 +203,10 @@ function App() {
     }
 };
 
+  useEffect(() => {
+    checkAuthStatus();
+  }, [checkAuthStatus]);
+
   return (
     <Router>
       <div className="app">
@@ -251,28 +225,22 @@ function App() {
           />
           <Route path="/player" 
             element={
-              (isAuthenticated && isAnalysisDone) ? (
-                <PlayerPage
-                  isAuthenticated={isAuthenticated}
-                  isLoading={isLoading}
-                  selectedMood={selectedMood}
-                  message={message?.text || ''}
-                  devices={devices}
-                  selectedDeviceId={selectedDevice?.id || ''}
-                  setSelectedDeviceId={(id: string) => setSelectedDevice(devices.find(d => d.id === id) || null)}
-                  handleLogout={handleLogout}
-                  handleMoodSelect={handleMoodSelect}
-                />
-              ) : isAuthenticated && !isAnalysisDone ? (
-                <MusicAnalysisLoading />
-              ) : (
-                <Navigate to="/" replace />
-              )
+              <PlayerPage
+                isAuthenticated={isAuthenticated}
+                isLoading={isLoading}
+                selectedMood={selectedMood}
+                message={message?.text || ''}
+                devices={devices}
+                selectedDeviceId={selectedDevice?.id || ''}
+                setSelectedDeviceId={(id: string) => setSelectedDevice(devices.find(d => d.id === id) || null)}
+                handleLogout={handleLogout}
+                handleMoodSelect={handleMoodSelect}
+              />
             } 
           />
           <Route path="/" 
             element={
-              (isAuthenticated && isAnalysisDone) ? (
+              isAuthenticated ? (
                 <PlayerPage
                   isAuthenticated={isAuthenticated}
                   isLoading={isLoading}
@@ -284,8 +252,6 @@ function App() {
                   handleLogout={handleLogout}
                   handleMoodSelect={handleMoodSelect}
                 />
-              ) : isAuthenticated && !isAnalysisDone ? (
-                <MusicAnalysisLoading />
               ) : (
                 <LoginPage
                   isAuthenticated={isAuthenticated}
