@@ -35,8 +35,6 @@ def play_tracks(sp: spotipy.Spotify, track_uris: list, device_id: str | None = N
     """
     Starts playback of the given tracks on the user's active or specified device.
     """
-    if not sp:
-        raise ValueError("Spotify client not initialized.")
     if not track_uris:
         print("No track URIs provided to play.")
         return False
@@ -52,8 +50,6 @@ def queue_tracks(sp: spotipy.Spotify, track_uris: list, device_id: str | None = 
     """
     Adds the given tracks to the user's playback queue.
     """
-    if not sp:
-        raise ValueError("Spotify client not initialized.")
     if not track_uris:
         print("No track URIs provided to queue.")
         return False
@@ -68,8 +64,6 @@ def queue_tracks(sp: spotipy.Spotify, track_uris: list, device_id: str | None = 
 
 def get_available_devices(sp: spotipy.Spotify):
     """Gets a list of the user's available Spotify devices."""
-    if not sp:
-        raise ValueError("Spotify client not initialized.")
     try:
         devices = sp.devices()
         return devices['devices'] if devices and 'devices' in devices else []

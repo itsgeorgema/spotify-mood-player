@@ -7,14 +7,14 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 
 **IMPORTANT:** This app is in Spotify Developer mode. Only whitelisted users can log in properly.
 
+**BIG UPDATES:** Migrated hosting service from Fly.io for backend to AWS Lambda. Migrated Fly.io-hosted MySQL database to PostgreSQL database on Supabase. Refactored classification algorithm to utilize OpenAI API to classify songs by mood based on lyrics and audio features instead of Naive Bayes-based scoring model with Sentiment Analysis.
+
 ## Features
 
 - **Advanced Mood Analysis**
-  - Multi-modal mood detection using lyrics, audio features, and sentiment analysis
+  - Multi-modal mood detection using few shot learning with a hand labeled dataset, song name, artist, lyrics, and audio features with OpenAI API
   - Support for 8 distinct moods: happy, sad, energetic, calm, mad, romantic, focused, and mysterious
-  - Naive Bayes classifier with a bag-of-words model for lyrics-based mood detection
-  - Audio feature analysis using Librosa (tempo, energy, brightness, zero-crossing rate)
-  - Sentiment analysis using NLTK's VADER and SIA
+  - Audio feature extraction using Librosa (tempo, energy, brightness, zero-crossing rate)
 
 - **Smart Music Processing**
   - Parallel processing of user's Spotify library using ThreadPoolExecutor
@@ -31,7 +31,7 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 
 - **Technical Features**
   - Docker containerization for consistent development (local, not in production)
-  - MySQL database for persistent storage
+  - PostgreSQL database for persistent storage
   - RESTful API with proper CORS support
   - OAuth 2.0 authentication flow
   - Automatic database connection management
@@ -40,11 +40,11 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 
 ## Tech Stack
 
-- Frontend: React, TypeScript, Vite, HTML, CSS
-- Backend: Flask, Python
-- Database: MySQL 8.0
+- Frontend: React, TypeScript, Vite, HTML, CSS, Vercel
+- Backend: Flask, Python, AWS Lambda
+- Database: PostgreSQL, Supabase
 - Infrastructure: Docker
-- APIs and Libraries: iTunes Search API, Genius API, Spotify API, Librosa, ThreadPoolExecutor, Gevent, NLTK
+- APIs and Libraries: OpenAI API, iTunes Search API, Genius API, Spotify API, Librosa, ThreadPoolExecutor, Gevent
 - Build/Dev Tools: Vite, Node.js, npm, Cloudflare Tunnel
 
 ## Setup
@@ -118,9 +118,8 @@ mysql -u root -p your_db_name < mysql-init.sql
 
 ---
 
-## Lyrics Training Data
+## Few Shot Learning Data
 
-- The backend uses a `training_data.csv` file for lyrics-based mood classification using naive bayes theorem probabilities
 - Lyrics are pre-cleaned: no leading/trailing spaces, no verse indicators, properly quoted, and all vulgarities/curse words are censored with asterisks.
 - If you add new lyrics, ensure they follow this format for best results.
 
