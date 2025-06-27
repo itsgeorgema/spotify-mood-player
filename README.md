@@ -3,35 +3,36 @@
 Select your current mood, and Spotify will play music based on that mood.
 
 Deployed on Vercel at: https://spotify-mood-player.vercel.app/
-(backend deployed on fly.io)
+(backend deployed on AWS Lambda)
 
 **IMPORTANT:** This app is in Spotify Developer mode. Only whitelisted users can log in properly.
 
-**BIG UPDATES:** Migrated hosting service from Fly.io for backend to AWS Lambda. Migrated Fly.io-hosted MySQL database to PostgreSQL database on Supabase. Refactored classification algorithm to utilize OpenAI API to classify songs by mood based on lyrics and audio features instead of Naive Bayes-based scoring model with Sentiment Analysis.
+**UPDATES:** 
+- Migrated hosting service from Fly.io for backend to AWS Lambda
+- Migrated Fly.io-hosted MySQL database to PostgreSQL database on Supabase
+- Refactored and improved classification algorithm using OpenAI API to better classify songs across all mood categories
 
 ## Features
 
 - **Advanced Mood Analysis**
-  - Multi-modal mood detection using few shot learning with a hand labeled dataset, song name, artist, lyrics, and audio features with OpenAI API
-  - Support for 8 distinct moods: happy, sad, energetic, calm, mad, romantic, focused, and mysterious
-  - Audio feature extraction using Librosa (tempo, energy, brightness, zero-crossing rate)
+  - Multi-modal mood detection using few-shot learning with OpenAI API
+  - Balanced classification across 8 distinct moods: happy, sad, energetic, calm, mad, romantic, focused, and mysterious
+  - Audio feature extraction and analysis using Librosa
 
 - **Smart Music Processing**
   - Parallel processing of user's Spotify library using ThreadPoolExecutor
-  - Automatic audio feature extraction from iTunes previews using Librosa
+  - Automatic audio feature extraction from iTunes previews
   - Fallback mechanisms for lyrics retrieval (Genius API + Vagalume)
-  - Batch processing with proper resource cleanup
-  - Memory-optimized track analysis
 
 - **User Experience**
   - Real-time Spotify playback control
   - Automatic library analysis on first login
-  - Persistent mood-based track categorization (until automatic database flush upon logout)
+  - Persistent mood-based track categorization
   - Responsive and modern UI with Spotify-inspired design
 
 - **Technical Features**
-  - Docker containerization for consistent development (local, not in production)
-  - PostgreSQL database for persistent storage
+  - Serverless architecture with AWS Lambda
+  - PostgreSQL database on Supabase
   - RESTful API with proper CORS support
   - OAuth 2.0 authentication flow
   - Automatic database connection management
@@ -43,8 +44,7 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 - Frontend: React, TypeScript, Vite, HTML, CSS, Vercel
 - Backend: Flask, Python, AWS Lambda
 - Database: PostgreSQL, Supabase
-- Infrastructure: Docker
-- APIs and Libraries: OpenAI API, iTunes Search API, Genius API, Spotify API, Librosa, ThreadPoolExecutor, Gevent
+- APIs and Libraries: OpenAI API, iTunes Search API, Genius API, Spotify API, Librosa
 - Build/Dev Tools: Vite, Node.js, npm, Cloudflare Tunnel
 
 ## Setup
@@ -66,12 +66,10 @@ FLASK_SECRET_KEY=your_flask_secret (random string for Flask session encryption)
 FRONTEND_URL=http://127.0.0.1:5173 (URL to your frontend deployment)
 GENIUS_ACCESS_TOKEN=your_genius_token (get from Genius Developer Dashboard)
 FLASK_ENV=development (production when deployed)
-PORT=5001
-MYSQL_HOST=mysql
-MYSQL_USER=your_mysql_user (set your own username)
-MYSQL_ROOT_PASSWORD=your_mysql_root_password (set when downloading MySQL)
-MYSQL_PASSWORD=your_mysql_password (set your own)
-MYSQL_DATABASE=your_db_name (set your own database name)
+OPENAI_API_KEY=API key from OpenAI
+SUPABASE_DATABASE_URL=get connection to postgres database in supabase
+AWS_REGION=whatever region hosted on
+AWS_ACCOUNT_ID=12 digit ID from dashboard
 ```
 
 #### Frontend (`src/.env`)
@@ -82,9 +80,6 @@ VITE_BACKEND_API_URL=http://127.0.0.1:5001/api (URL to your backend deployment)
 ### 3. Install & Run
 
 #### Backend
-- Download MySQL and set your root password, then download Docker Desktop. 
-    - Docker Compose will be used to containerize backend and MySQL database service
-    - Compose yml is already defined to containerize services and database schema is already defined
 ```bash
 cd backend
 docker compose up --build
@@ -103,21 +98,6 @@ npm run dev
 
 - Visit [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser.
 
-### 5. Database
-
-- If not using Docker Compose, setup schema manually in instance:
-```bash
-mysql -u root -p
-# In the MySQL shell:
-CREATE DATABASE your_db_name;
-exit
-# Then run:
-mysql -u root -p your_db_name < mysql-init.sql
-```
-- Make sure your .env values match what you create in MySQL
-
----
-
 ## Few Shot Learning Data
 
 - Lyrics are pre-cleaned: no leading/trailing spaces, no verse indicators, properly quoted, and all vulgarities/curse words are censored with asterisks.
@@ -127,13 +107,12 @@ mysql -u root -p your_db_name < mysql-init.sql
 
 - **Parallel Processing**: Uses ThreadPoolExecutor for concurrent track analysis
 - **Database Connection Management**: Automatic retry logic for database connections
-- **Service Orchestration**: Docker Compose with health checks ensures proper startup order
-- **Memory Management**: Batch processing with proper resource cleanup
+- **Memory Management**: Optimized resource usage and cleanup
 - **API Rate Limiting**: Built-in delays to respect external API limits
 
 ## Production Limitations
 
-**IMPORTANT:** In production, the mood categorization is not fully accurate because the Genius API blocks requests from cloud hosting service IPs like Fly.io due to API abuse, terms of service violations (scraping), and legal/copyright restrictions. The categorization only works accurately in:
+**IMPORTANT:** In production, the mood categorization may not be fully accurate because the Genius API blocks requests from cloud hosting service IPs due to API abuse, terms of service violations (scraping), and legal/copyright restrictions. The categorization works best in:
 - Local development environment
 - When using a tunnel service (like Cloudflare) that routes through a residential IP to the production frontend
 
@@ -158,11 +137,12 @@ cloudflared tunnel --url http://127.0.0.1:5001
 
 ## Development Notes
 
-- The backend uses Gunicorn with Gevent workers for async processing
+- The backend uses Flask for API endpoints
 - Database connections are automatically retried on startup
 - Track analysis is parallelized for better performance
 - Memory usage is optimized through batch processing
 - API rate limits are respected with built-in delays
+- OpenAI model not the best. doesn't understand mood nuance
 
 ## Challenges Overcome
 
@@ -181,8 +161,8 @@ During development, several significant challenges were encountered and resolved
 
 4. **Performance and Storage Optimization**
    - Faced with extremely slow sequential categorization, so implemented parrallel processing
-   - Previously used Flask session cookies to store tracks, uris, and moods, but was unable to store a large amount of songs, so switched to a MySQL relational database
-   - For local dev, locally hosted MySQL database is not capable of storing huge amounts of data for songs in libraries, and for production, resource limitation due to cost of a huge database made storage just as limited, so I created a robust caching system that deletes all data that is no longer needed
+   - Previously used Flask session cookies to store tracks, uris, and moods, but was unable to store a large amount of songs, so switched to a PostgreSQL relational database
+   - I created a robust caching system that deletes all data that is no longer needed because of resource limitations from lack of funding.
 
 ## Lessons Learned
 

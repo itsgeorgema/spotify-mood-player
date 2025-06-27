@@ -1,0 +1,42 @@
+service: spotify-mood-player
+
+provider:
+  name: aws
+  runtime: python3.9
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'us-east-1'}
+  environment:
+    FLASK_ENV: production
+    SPOTIFY_CLIENT_ID: ${env:SPOTIFY_CLIENT_ID}
+    SPOTIFY_CLIENT_SECRET: ${env:SPOTIFY_CLIENT_SECRET}
+    GENIUS_ACCESS_TOKEN: ${env:GENIUS_ACCESS_TOKEN}
+    OPENAI_API_KEY: ${env:OPENAI_API_KEY}
+    POSTGRES_USER: ${env:POSTGRES_USER}
+    POSTGRES_PASSWORD: ${env:POSTGRES_PASSWORD}
+    POSTGRES_DB: ${env:POSTGRES_DB}
+    POSTGRES_HOST: ${env:POSTGRES_HOST}
+    FRONTEND_URL: ${env:FRONTEND_URL}
+
+plugins:
+  - serverless-python-requirements
+  - serverless-wsgi
+
+custom:
+  wsgi:
+    app: app.app
+    packRequirements: false
+  pythonRequirements:
+    dockerizePip: non-linux
+    slim: true
+    usePoetry: false
+
+functions:
+  app:
+    handler: wsgi_handler.handler
+    events:
+      - http:
+          path: /
+          method: ANY
+      - http:
+          path: /{proxy+}
+          method: ANY 

@@ -16,7 +16,7 @@ const LoginSuccess: React.FC<{ checkAuthStatus: () => Promise<void> }> = ({ chec
         setError(null);
         
         // Only trigger analysis once, right after login
-        const response = await fetch(getApiEndpoint('/api/sentiment_analysis'), {
+        const response = await fetch(getApiEndpoint('/api/analyze'), {
           method: 'POST',
           credentials: 'include'
         });

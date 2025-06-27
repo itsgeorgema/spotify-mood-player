@@ -1,5 +1,4 @@
 import os
-import nltk
 from lyricsgenius import Genius
 import random
 import requests
@@ -8,15 +7,85 @@ import numpy as np
 import tempfile
 from urllib.parse import quote
 from pydub import AudioSegment
-from nltk.sentiment import SentimentIntensityAnalyzer
-from naive_bayes import NaiveBayesMoodClassifier
 import csv
 import pathlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List
+import openai
+import json
+import logging
+import time
+import urllib3
+from urllib3.util.retry import Retry
+import sys  # Add sys for flushing output
 
-# Download required NLTK data
-nltk.download('vader_lexicon', quiet=True)
+# Configure the urllib3 connection pool globally with much larger limits
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Create a custom connection pool manager with larger pool sizes
+http = urllib3.PoolManager(
+    maxsize=100,  # Maximum number of connections in the pool
+    block=False,  # Don't block when pool is full, just create new connections
+    retries=Retry(
+        total=5,
+        backoff_factor=0.5,
+        status_forcelist=[500, 502, 503, 504]
+    )
+)
+
+# Monkey patch requests to use our custom pool manager
+import requests.adapters
+original_init = requests.adapters.HTTPAdapter.__init__
+
+def patched_init(self, *args, **kwargs):
+    kwargs['pool_maxsize'] = 100
+    kwargs['max_retries'] = 5
+    kwargs['pool_block'] = False
+    return original_init(self, *args, **kwargs)
+
+requests.adapters.HTTPAdapter.__init__ = patched_init
+
+# Configure logging to reduce Numba verbosity - disable completely
+logging.basicConfig(level=logging.INFO)
+# Completely disable Numba logging
+logging.getLogger('numba').setLevel(logging.CRITICAL)
+# Also disable other noisy loggers
+logging.getLogger('numba.core').setLevel(logging.CRITICAL)
+logging.getLogger('numba.core.ssa').setLevel(logging.CRITICAL)
+logging.getLogger('numba.core.interpreter').setLevel(logging.CRITICAL)
+logging.getLogger('numba.core.byteflow').setLevel(logging.CRITICAL)
+logging.getLogger('numba.core.ir').setLevel(logging.CRITICAL)
+logging.getLogger('numba.core.typeinfer').setLevel(logging.CRITICAL)
+logging.getLogger('numba.core.compiler').setLevel(logging.CRITICAL)
+
+# Disable Numba JIT debug output
+os.environ['NUMBA_DEBUG'] = '0'
+os.environ['NUMBA_DISABLE_JIT'] = '0'
+os.environ['NUMBA_VERBOSE'] = '0'
+
+logger = logging.getLogger(__name__)
+
+openai_client = None
+def initialize_openai_client():
+    """Initialize the OpenAI client with API key from environment variables."""
+    global openai_client
+    try:
+        # Check if client is already initialized
+        if openai_client:
+            print("OpenAI client already initialized, reusing existing client")
+            return openai_client
+            
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            print("WARNING: OPENAI_API_KEY is not set")
+            return None
+            
+        print("Initializing new OpenAI client...")
+        openai_client = openai.OpenAI(api_key=api_key)
+        print("OpenAI client initialized successfully")
+        return openai_client
+    except Exception as e:
+        print(f"Error initializing OpenAI client: {e}")
+        return None
 
 def load_training_data():
     """Load training data from CSV file."""
@@ -27,53 +96,60 @@ def load_training_data():
         with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                # Split moods string into list and strip whitespace
                 moods = [mood.strip() for mood in row['moods'].split(',')]
-                training_data.append((row['lyrics'], moods))
+                training_data.append({'song': row['song'],'artist': row['artist'],'lyrics': row['lyrics'], 'moods': moods,'tempo': row['tempo'],'energy': row['energy'],'brightness': row['brightness'],'zcr': row['zcr'],'contrast': row['contrast'],'chroma': row['chroma'],'flatness': row['flatness'],'rolloff': row['rolloff'],'mfcc1': row['mfcc1'],'mfcc2': row['mfcc2'],'mfcc3': row['mfcc3'],'mfcc4': row['mfcc4'],'mfcc5': row['mfcc5']})
         print(f"Loaded {len(training_data)} training examples from CSV")
         return training_data
     except Exception as e:
         print(f"Error loading training data: {e}")
         # Return minimal training data as fallback
         return [
-            ("I'm so happy", ["happy"]),
-            ("I'm so sad", ["sad"]),
-            ("I'm so energetic", ["energetic"]),
-            ("I'm so calm", ["calm"]),
-            ("I'm so mad", ["mad"]),
-            ("I'm so romantic", ["romantic"]),
-            ("I'm so focused", ["focused"]),
-            ("I'm so mysterious", ["mysterious"])
+            {"lyrics": "I'm so happy", "moods": ["happy"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0},
+            {"lyrics": "I'm so sad", "moods": ["sad"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0},
+            {"lyrics": "I'm so energetic", "moods": ["energetic"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0},
+            {"lyrics": "I'm so calm", "moods": ["calm"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0},
+            {"lyrics": "I'm so mad", "moods": ["mad"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0},
+            {"lyrics": "I'm so romantic", "moods": ["romantic"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0},
+            {"lyrics": "I'm so focused", "moods": ["focused"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0},
+            {"lyrics": "I'm so mysterious", "moods": ["mysterious"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0}
         ]
 
 # Load training data from CSV
 training_data = load_training_data()
-naive_bayes_clf = NaiveBayesMoodClassifier()
-if training_data:
-    naive_bayes_clf.fit(training_data)
 
 def create_genius_client():
     token = os.getenv('GENIUS_ACCESS_TOKEN')
     if token:
-        print(f"[DEBUG] create_genius_client called. GENIUS_ACCESS_TOKEN={token[:5]}...{token[-5:]}")
+        print(f"[DEBUG] create_genius_client called. GENIUS_ACCESS_TOKEN is set")
     else:
-        print(f"[DEBUG] create_genius_client called. GENIUS_ACCESS_TOKEN=None")
+        print(f"[DEBUG] create_genius_client called. GENIUS_ACCESS_TOKEN is not set")
     try:
         if not token:
             print("WARNING: GENIUS_ACCESS_TOKEN is not set")
             return None
-        print(f"Using Genius token: {token[:5]}...{token[-5:]}")
         
-        print("Creating Genius client...")
+        print("Creating Genius client with optimized connection pool...")
         genius = Genius(
             token,
             verbose=True,
             remove_section_headers=True,
             timeout=30,
-            retries=3,
-            sleep_time=5,  # Increased sleep time between requests
+            retries=3,  # Reduced from 5 to avoid overloading
+            sleep_time=0.5,  # Reduced for speed while still respecting rate limits
         )
-        print("Genius client created successfully")
+        
+        # Override the genius client's session to use our configured adapter
+        session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(
+            pool_maxsize=100,
+            max_retries=3,
+            pool_block=False
+        )
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        genius._session = session
+        
+        print("Genius client created successfully with optimized connection pool")
         return genius
     except Exception as e:
         print(f"Error creating Genius client: {e}")
@@ -106,11 +182,6 @@ def download_and_convert_preview(preview_url):
             pass
         return None
 
-def analyze_lyrics_sentiment(lyrics):
-    sia = SentimentIntensityAnalyzer()
-    sentiment = sia.polarity_scores(str(lyrics))
-    return sentiment['compound']
-
 def get_itunes_preview(track_name, artist_name):
     """Search iTunes for a track and return the 30s preview URL if available."""
     query = f'{track_name} {artist_name}'
@@ -123,193 +194,7 @@ def get_itunes_preview(track_name, artist_name):
                 return data['results'][0].get('previewUrl')  # 30s MP3 URL
     except Exception as e:
         print(f"Error fetching iTunes preview: {e}")
-    return None
-
-# --- Heartbreak and negative phrase detection ---
-HEARTBREAK_PHRASES = [
-    "heartbreak", "miss you", "wish", "regret", "left me", "cry", "alone", "goodbye", "lost", "pain", "sorry", "tears", "broken", "apart", "gone", "over", "move on", "hurts", "memories", "empty", "let go", "farewell", "without you", "why", "can't", "couldn't", "should've", "if only", "never", "sad", "blue", "sorrow", "grief", "aching", "wilt", "drown", "wound", "bleed", "abandon", "isolate", "solitude", "tragedy",
-    "when I was your man", "all I want", "mr. loverman", "sour grapes", "wish I could", "if only", "I miss you", "I'm sorry", "let you go", "can't have", "couldn't keep", "should've known", "never again", "without you", "left me", "move on", "over now", "goodbye", "gone", "apart", "hurts", "memories", "empty", "farewell",
-    # More heartbreak context
-    "i still care", "i can't forget", "i can't move on", "i'm not over you", "i'm not okay", "i'm not fine", "i'm broken", "i'm lost", "i'm alone", "i'm empty", "i'm missing you", "i'm hurting", "i'm in pain", "i'm blue", "i'm down", "i'm sorry for", "i wish you were here", "i wish it was different", "i wish i could go back", "i wish i didn't care", "i wish i could forget"
-]
-
-def detect_heartbreak_context(lyrics):
-    if not lyrics:
-        return False
-    lyrics_lower = lyrics.lower()
-    for phrase in HEARTBREAK_PHRASES:
-        if phrase in lyrics_lower:
-            return True
-    return False
-
-def expanded_bag_of_words():
-    # Expanded and modernized bag-of-words for each mood
-    return {
-        'romantic': [
-            "love", "heart", "kiss", "baby", "darling", "sweet", "forever", "together", "soul", "passion", "desire", "romance", "beautiful", "perfect", "dream", "hold", "touch", "feel", "forever", "soulmate", "cherish", "adore", "belong", "affection", "crush", "date", "roses", "cuddle", "embrace", "devotion", "honey", "valentine", "flirt", "infatuation"
-        ],
-        'mysterious': [
-            "night", "dark", "shadow", "secret", "mystery", "moon", "whisper", "silence", "unknown", "hidden", "ghost", "haunt", "echo", "fog", "mist", "twilight", "dusk", "dawn", "veil", "enigma", "puzzle", "riddle", "curse", "spell", "phantom", "illusion", "maze", "cryptic", "arcane", "omen", "veil", "shroud"
-        ],
-        'mad': [
-            "hate", "anger", "rage", "fight", "scream", "mad", "fury", "revenge", "betray", "hurt", "pain", "break", "destroy", "burn", "fire", "storm", "furious", "enemy", "war", "battle", "wrath", "explode", "shout", "slam", "punch", "yell", "agony", "frustrate", "resent", "irate", "outburst"
-        ],
-        'sad': [
-            "cry", "tears", "alone", "goodbye", "miss", "pain", "blue", "hurt", "broken", "empty", "lonely", "lost", "regret", "sorry", "sorrow", "grief", "heartache", "missing", "gone", "fade", "die", "end", "dark", "cold", "weep", "mourn", "depress", "down", "hopeless", "melancholy", "despair", "forsaken", "aching", "wilt", "drown", "wound", "bleed", "abandon", "isolate", "solitude", "tragedy", "heartbreak", "left me", "apart", "move on", "over", "hurts", "memories", "empty", "let go", "farewell", "without you", "why", "can't", "couldn't", "should've", "if only", "never", "wish", "wish I could", "I miss you", "I'm sorry", "let you go", "can't have", "couldn't keep", "should've known", "never again", "without you", "move on", "over now", "goodbye", "gone", "apart", "hurts", "memories", "empty", "farewell"
-        ],
-        'happy': [
-            "joy", "smile", "sun", "shine", "dance", "happy", "bright", "light", "laugh", "fun", "play", "sing", "celebrate", "party", "cheer", "glad", "wonderful", "amazing", "beautiful", "perfect", "dream", "hope", "love", "life", "yay", "delight", "ecstatic", "glee", "bliss", "grin", "excite", "radiant", "bubbly", "upbeat", "merry", "jolly", "elated", "sparkle", "vivid", "sunny", "carefree"
-        ],
-        'energetic': [
-            "run", "move", "jump", "fire", "wild", "energy", "power", "strong", "fast", "quick", "speed", "rush", "pump", "beat", "rhythm", "dance", "party", "rock", "loud", "bass", "drums", "electric", "thunder", "storm", "hype", "adrenaline", "charge", "blast", "roar", "pulse", "vibe", "bounce", "rush", "frenzy", "sprint", "burst"
-        ],
-        'calm': [
-            "peace", "quiet", "slow", "breeze", "dream", "calm", "soft", "gentle", "easy", "smooth", "flow", "float", "drift", "rest", "sleep", "relax", "serene", "tranquil", "soothe", "hush", "whisper", "silence", "still", "cool", "chill", "mellow", "breathe", "cozy", "lullaby", "ease", "soothing", "zen", "meditate", "peaceful"
-        ],
-        'focused': [
-            "work", "focus", "drive", "goal", "win", "plan", "mind", "think", "learn", "grow", "build", "create", "achieve", "success", "power", "strength", "determine", "decide", "choose", "path", "way", "journey", "forward", "ahead", "concentrate", "study", "dedicate", "commit", "resolve", "target", "ambition", "vision", "mission", "discipline"
-        ]
-    }
-
-def bag_of_words_mood_boost(lyrics):
-    mood_keywords = expanded_bag_of_words()
-    lyrics_lower = lyrics.lower() if lyrics else ""
-    mood_boost = {mood: 0 for mood in mood_keywords}
-    for mood, keywords in mood_keywords.items():
-        for word in keywords:
-            count = lyrics_lower.count(word)
-            if count > 0:
-                # Core words get higher weight
-                if word in ['love', 'hate', 'happy', 'sad', 'energy', 'calm', 'focus', 'mystery']:
-                    mood_boost[mood] += count * 2
-                else:
-                    mood_boost[mood] += count
-    return mood_boost
-
-# --- Scoring model weights (recalibrated) ---
-MOOD_SCORING_WEIGHTS = {
-    'naive_bayes': 0.35,   # Slightly less emphasis on lyrics-only
-    'bag_of_words': 0.18,  # Slightly less
-    'sentiment': 0.22,     # More weight to sentiment
-    'audio': 0.25          # More weight to audio features
-}
-
-# --- Per-mood audio/sentiment calibration (tuned) ---
-MOOD_AUDIO_THRESHOLDS = {
-    'happy':     {'sentiment': 0.25,  'brightness': 2000, 'energy': 0.05, 'zcr': 0.05, 'tempo': 95},
-    'sad':       {'sentiment': -0.15, 'brightness': 1700, 'energy': 0.045, 'zcr': 0.035, 'tempo': 85},
-    'energetic': {'sentiment': 0.05,  'brightness': 1800, 'energy': 0.07, 'zcr': 0.08, 'tempo': 115},
-    'calm':      {'sentiment': 0.0,   'brightness': 1600, 'energy': 0.035, 'zcr': 0.035, 'tempo': 75},
-    'mad':       {'sentiment': -0.08, 'brightness': 1700, 'energy': 0.06, 'zcr': 0.07, 'tempo': 100},
-    'romantic':  {'sentiment': 0.15,  'brightness': 1800, 'energy': 0.045, 'zcr': 0.045, 'tempo': 90},
-    'focused':   {'sentiment': 0.05,  'brightness': 1700, 'energy': 0.05, 'zcr': 0.045, 'tempo': 95},
-    'mysterious':{'sentiment': -0.05, 'brightness': 1500, 'energy': 0.045, 'zcr': 0.055, 'tempo': 95},
-}
-
-MOOD_SCORE_THRESHOLD = 0.22  # Lowered threshold for more flexible multi-mood assignment
-
-
-def mood_scoring_model(lyrics, sentiment, audio_features, nb_probs, bow_boost):
-    scores = {}
-    heartbreak_context = detect_heartbreak_context(lyrics)
-    for mood in MOOD_AUDIO_THRESHOLDS:
-        nb_score = nb_probs.get(mood, 0)
-        bow_values: List[float] = [float(v) for v in bow_boost.values()]
-        max_bow = 0.0
-        for v in bow_values:
-            if v > max_bow:
-                max_bow = v
-        bow_score = float(bow_boost.get(mood, 0)) / (max_bow + 1e-6) if max_bow > 0 else 0.0
-        af = audio_features
-        t = MOOD_AUDIO_THRESHOLDS[mood]
-        # Sentiment (scaled to mood)
-        sent_score = 1.0 if (mood == 'happy' and sentiment > t['sentiment']) else (
-            1.0 if (mood == 'sad' and sentiment < t['sentiment']) else 0.0)
-        audio_score = 0.0
-        if mood == 'happy':
-            if heartbreak_context:
-                # Strongly penalize happy if heartbreak context is present
-                scores[mood] = 0.0
-                continue
-            # Boost happy for strong audio features
-            if af['brightness'] > t['brightness'] and af['energy'] > t['energy'] and af['tempo'] > t['tempo']:
-                audio_score = 1.0
-            elif af['brightness'] > t['brightness'] or af['energy'] > t['energy'] or af['tempo'] > t['tempo']:
-                audio_score = 0.7
-        elif mood == 'energetic':
-            # Boost energetic for strong audio features
-            if af['tempo'] > t['tempo'] and af['energy'] > t['energy'] and af['zcr'] > t['zcr']:
-                audio_score = 1.0
-            elif af['tempo'] > t['tempo'] or af['energy'] > t['energy'] or af['zcr'] > t['zcr']:
-                audio_score = 0.7
-        elif mood == 'sad':
-            if heartbreak_context:
-                # Strongly boost sad if heartbreak context is present
-                audio_score = 1.0
-                sent_score = 1.0
-            elif sentiment < t['sentiment'] and af['brightness'] < t['brightness'] and af['energy'] < t['energy']:
-                audio_score = 1.0
-        elif mood == 'mysterious':
-            if af['brightness'] < t['brightness'] and af['zcr'] > t['zcr']:
-                audio_score = 1.0
-            elif af['brightness'] < t['brightness'] or af['zcr'] > t['zcr']:
-                audio_score = 0.7
-        elif mood == 'calm':
-            if af['tempo'] < t['tempo'] and af['energy'] < t['energy'] and af['zcr'] < t['zcr']:
-                audio_score = 1.0
-            elif af['tempo'] < t['tempo'] or af['energy'] < t['energy'] or af['zcr'] < t['zcr']:
-                audio_score = 0.7
-        elif mood == 'mad':
-            if sentiment < t['sentiment'] and af['energy'] > t['energy'] and af['zcr'] > t['zcr']:
-                audio_score = 1.0
-        elif mood == 'romantic':
-            if sentiment > t['sentiment'] and af['brightness'] > t['brightness']:
-                audio_score = 1.0
-        elif mood == 'focused':
-            if af['energy'] > t['energy'] and af['zcr'] < t['zcr']:
-                audio_score = 1.0
-            elif af['energy'] > t['energy'] or af['zcr'] < t['zcr']:
-                audio_score = 0.7
-        scores[mood] = (
-            MOOD_SCORING_WEIGHTS['naive_bayes'] * nb_score +
-            MOOD_SCORING_WEIGHTS['bag_of_words'] * bow_score +
-            MOOD_SCORING_WEIGHTS['sentiment'] * sent_score +
-            MOOD_SCORING_WEIGHTS['audio'] * audio_score
-        )
-    return scores
-
-
-def categorize_mood(tempo, energy, brightness, zcr, contrast, sentiment, lyrics=None):
-    audio_features = {'tempo': tempo, 'energy': energy, 'brightness': brightness, 'zcr': zcr, 'contrast': contrast}
-    bow_boost = bag_of_words_mood_boost(lyrics) if lyrics else {k:0 for k in MOOD_AUDIO_THRESHOLDS}
-    nb_probs = {mood: 0 for mood in MOOD_AUDIO_THRESHOLDS}
-    if lyrics and training_data:
-        tokens = naive_bayes_clf.tokenize(lyrics)
-        mood_scores = {}
-        for mood in naive_bayes_clf.mood_priors:
-            log_prob = np.log(naive_bayes_clf.mood_priors[mood])
-            for word in tokens:
-                if word in naive_bayes_clf.vocab:
-                    log_prob += np.log(naive_bayes_clf.word_probs[mood].get(word, 1 / (sum(naive_bayes_clf.mood_word_counts[mood].values()) + len(naive_bayes_clf.vocab))))
-            mood_scores[mood] = log_prob
-        max_log = max(mood_scores.values())
-        exp_scores = {mood: np.exp(score - max_log) for mood, score in mood_scores.items()}
-        total = sum(exp_scores.values())
-        nb_probs = {mood: exp_scores[mood] / total for mood in exp_scores}
-    scores = mood_scoring_model(lyrics, sentiment, audio_features, nb_probs, bow_boost)
-    filtered = [(mood, score) for mood, score in scores.items() if score >= MOOD_SCORE_THRESHOLD]
-    filtered.sort(key=lambda x: x[1], reverse=True)
-    top_moods = [mood for mood, score in filtered[:3]]
-    # Fallback if nothing meets threshold
-    if not top_moods:
-        max_key = None
-        max_value = float('-inf')
-        for k in scores:
-            if scores[k] > max_value:
-                max_value = scores[k]
-                max_key = k
-        top_moods = [max_key] if max_key is not None else []
-    return top_moods
+    return None 
 
 def fetch_lyrics_with_vagalume(song_title, artist_name):
     """Fetch lyrics from Vagalume public API as a fallback if Genius fails."""
@@ -340,237 +225,609 @@ def fetch_lyrics_with_vagalume(song_title, artist_name):
         return None
 
 def analyze_track(track, genius):
-    """Analyze a single track with all its features."""
-    print(f"Analyzing track: {track['name']} by {track['artist']}")
-    itunes_preview_url = get_itunes_preview(track['name'], track['artist'])
-    audio_features = {'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 'contrast': 0}
+    """Extract audio features and lyrics from a track efficiently."""
+    track_name = track['name']
+    artist_name = track['artist']
+    print(f"Analyzing track: {track_name} by {artist_name}")
+    
+    # Initialize with defaults
+    audio_features = {
+        'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 
+        'contrast': 0, 'chroma': 0, 'flatness': 0, 'rolloff': 0,
+        'mfcc1': 0, 'mfcc2': 0, 'mfcc3': 0, 'mfcc4': 0, 'mfcc5': 0
+    }
+    lyrics = ""
+    
+    # Create result dictionary immediately to avoid redundant copy operations
+    result = track.copy()
+    
+    try:
+        # Process lyrics first (while iTunes request is being made)
+        # This is often faster than audio processing and can run in parallel
+        if genius:
+            lyrics = extract_lyrics_faster(track, genius)
+            result['lyrics'] = lyrics
+        
+        # Process audio features
+        preview_url = get_itunes_preview(track_name, artist_name)
+        if preview_url:
+            print(f"Found iTunes preview for {track_name}")
+            audio_features = extract_audio_features(preview_url, track_name)
+            result.update(audio_features)
+        else:
+            print(f"No iTunes preview found for {track_name}")
+            result.update(audio_features)  # Use default features
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error analyzing track {track_name}: {e}")
+        # Still return a track with at least the basic info so it doesn't get lost
+        result['lyrics'] = lyrics
+        result.update(audio_features)
+        return result
+
+def extract_audio_features(preview_url, track_name):
+    """Extract audio features from a track preview URL."""
+    audio_features = {
+        'tempo': 0, 'energy': 0, 'brightness': 0, 'zcr': 0, 
+        'contrast': 0, 'chroma': 0, 'flatness': 0, 'rolloff': 0,
+        'mfcc1': 0, 'mfcc2': 0, 'mfcc3': 0, 'mfcc4': 0, 'mfcc5': 0
+    }
+    
     wav_path = None
     y = None
     sr = None
-    song = None
-    lyrics = None
-    sentiment = 0
-    used_fallback = False
-
-    try:
-        if itunes_preview_url:
-            print(f"Found iTunes preview for {track['name']}: {itunes_preview_url}")
-            wav_path = download_and_convert_preview(itunes_preview_url)
-            if wav_path:
-                try:
-                    y, sr = librosa.load(wav_path, sr=None)
-                    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-                    energy = float(np.mean(librosa.feature.rms(y=y)))
-                    brightness = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
-                    zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
-                    contrast = float(np.mean(librosa.feature.spectral_contrast(y=y, sr=sr)))
-                    audio_features = {
-                        'tempo': tempo,
-                        'energy': energy,
-                        'brightness': brightness,
-                        'zcr': zcr,
-                        'contrast': contrast
-                    }
-                    print(f"Audio features for {track['name']}: {audio_features}")
-                except Exception as e:
-                    print(f"Error analyzing audio features for {track['name']}: {e}")
-                    raise  # Re-raise the exception to see the full error
-                finally:
-                    if wav_path and os.path.exists(wav_path):
-                        os.remove(wav_path)
-                    del wav_path
-                    if y is not None:
-                        del y
-                    if sr is not None:
-                        del sr
-        else:
-            print(f"No iTunes preview found for {track['name']}")
-
-        if genius:
-            try:
-                print(f"Attempting to fetch lyrics for '{track['name']}' by '{track['artist']}'")
-                token = os.getenv('GENIUS_ACCESS_TOKEN')
-                if token:
-                    print(f"Using Genius token: {token[:5]}...{token[-5:]}")
-                else:
-                    print("WARNING: GENIUS_ACCESS_TOKEN is not set")
-                
-                # Try multiple search strategies
-                search_strategies = [
-                    # Strategy 1: Basic search with exact match
-                    lambda: genius.search_song(track['name'], track['artist'], get_full_info=False),
-                    # Strategy 2: Basic search with partial match
-                    lambda: genius.search_song(track['name'].split('(')[0].strip(), track['artist'], get_full_info=False),
-                    # Strategy 3: Full search with exact match
-                    lambda: genius.search_song(track['name'], track['artist'], get_full_info=True),
-                    # Strategy 4: Full search with partial match
-                    lambda: genius.search_song(track['name'].split('(')[0].strip(), track['artist'], get_full_info=True)
-                ]
-                
-                for i, search_strategy in enumerate(search_strategies, 1):
-                    try:
-                        print(f"Trying search strategy {i}...")
-                        song = search_strategy()
-                        if song and song.lyrics:
-                            lyrics = song.lyrics
-                            print(f"Successfully fetched lyrics for {track['name']} (strategy {i})")
-                            print(f"Lyrics length: {len(lyrics)} characters")
-                            break
-                        else:
-                            print(f"No lyrics found with strategy {i}")
-                    except Exception as e:
-                        print(f"Error in search strategy {i}: {str(e)}")
-                        continue
-                
-                if not lyrics:
-                    print("All Genius search strategies failed, trying Vagalume fallback...")
-                    lyrics = fetch_lyrics_with_vagalume(track['name'], track['artist'])
-                    if lyrics:
-                        print(f"Successfully fetched lyrics from Vagalume for {track['name']}")
-                        used_fallback = True
-                    else:
-                        print(f"Vagalume fallback also failed for {track['name']}")
-                
-            except Exception as e:
-                print(f"Error fetching lyrics for '{track['name']}' by '{track['artist']}':")
-                print(f"Error type: {type(e).__name__}")
-                print(f"Error message: {str(e)}")
-                import traceback
-                print("Full error traceback:")
-                print(traceback.format_exc())
-        else:
-            print("No Genius client available - skipping lyrics fetch")
-
-        if lyrics:
-            sentiment = analyze_lyrics_sentiment(lyrics)
-            print(f"Sentiment for {track['name']}: {sentiment}")
-
-        track.update(audio_features)
-        track['sentiment'] = sentiment
-        track['moods'] = categorize_mood(
-            tempo=audio_features['tempo'],
-            energy=audio_features['energy'],
-            brightness=audio_features['brightness'],
-            zcr=audio_features['zcr'],
-            contrast=audio_features['contrast'],
-            sentiment=sentiment,
-            lyrics=lyrics
-        )
-        print(f"Moods for {track['name']}: {track['moods']}")
-        return track
-
-    except Exception as e:
-        print(f"Error analyzing track {track['name']}: {e}")
-        import traceback
-        print("Full error traceback:")
-        print(traceback.format_exc())
-        raise  # Re-raise the exception to see the full error
-    finally:
-        # Cleanup
-        if lyrics:
-            del lyrics
-        if song:
-            del song
-
-def analyze_user_library(sp, session=None):
-    """Analyze user's library using parallel processing."""
-    print("Fetching user's library...")
-    print("Creating Genius client...")
-    genius = create_genius_client()
-    if not genius:
-        print("WARNING: Failed to create Genius client - lyrics will not be fetched")
-    else:
-        print("Genius client created successfully")
-    analyzed_tracks = []
     
     try:
-        offset = 0
-        limit = 20  # Batch size for each round of parallel processing
-        # Use up to 4x the number of CPUs, but cap at 32
-        max_workers = min(32, (os.cpu_count() or 1) * 4)
+        wav_path = download_and_convert_preview(preview_url)
+        if not wav_path:
+            return audio_features
+            
+        # Use a lower SR for faster processing with minimal quality loss
+        y, sr = librosa.load(wav_path, sr=22050)  # Lower sample rate for faster processing
         
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            while True:
-                results = sp.current_user_saved_tracks(limit=limit, offset=offset)
-                if not results['items']:
-                    break
-                    
-                batch_tracks = []
-                for item in results['items']:
-                    track = item['track']
-                    if track:
-                        batch_tracks.append({
-                            'id': track['id'],
-                            'name': track['name'],
-                            'artist': track['artists'][0]['name'],
-                            'uri': track['uri']
-                        })
-                
-                print(f"Processing batch of {len(batch_tracks)} tracks (offset {offset})")
-                
-                # Submit all tracks in the batch for parallel processing
-                future_to_track = {
-                    executor.submit(analyze_track, track, genius): track 
-                    for track in batch_tracks
-                }
-                
-                # Collect results as they complete
-                for future in as_completed(future_to_track):
-                    track = future_to_track[future]
-                    try:
-                        result = future.result()
-                        if result:
-                            analyzed_tracks.append(result)
-                            print(f"Successfully analyzed track: {track['name']}")
-                    except Exception as e:
-                        print(f"Error processing track {track['name']}: {e}")
-                        # Try to fetch lyrics with Vagalume as fallback
-                        try:
-                            lyrics = fetch_lyrics_with_vagalume(track['name'], track['artist'])
-                            if lyrics:
-                                track['lyrics'] = lyrics
-                                track['sentiment'] = analyze_lyrics_sentiment(lyrics)
-                                track['moods'] = categorize_mood(
-                                    tempo=0,  # Use default values since we don't have audio features
-                                    energy=0,
-                                    brightness=0,
-                                    zcr=0,
-                                    contrast=0,
-                                    sentiment=track['sentiment'],
-                                    lyrics=lyrics
-                                )
-                                analyzed_tracks.append(track)
-                                print(f"Successfully analyzed track with Vagalume fallback: {track['name']}")
-                        except Exception as fallback_error:
-                            print(f"Fallback also failed for track {track['name']}: {fallback_error}")
-                
-                offset += limit
-                if len(batch_tracks) < limit:
-                    break
-                
-        # Build mood->uris dict, limit to 100 per mood
-        mood_uris = {}
-        for track in analyzed_tracks:
-            for mood in track['moods']:
-                mood_uris.setdefault(mood, []).append(track['uri'])
+        # Extract features
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        energy = float(np.mean(librosa.feature.rms(y=y)))
         
-        for mood in mood_uris:
-            if len(mood_uris[mood]) > 100:
-                mood_uris[mood] = random.sample(mood_uris[mood], 100)
+        # Use optimized computation methods - compute STFT once and reuse
+        stft = np.abs(librosa.stft(y))
         
-        print("Mood URI dict:", {k: len(v) for k, v in mood_uris.items()})
+        # Calculate spectral features efficiently using the same STFT
+        brightness = float(np.mean(librosa.feature.spectral_centroid(S=stft, sr=sr)))
+        zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
+        contrast = float(np.mean(librosa.feature.spectral_contrast(S=stft, sr=sr)))
+        chroma = float(np.mean(librosa.feature.chroma_stft(S=stft, sr=sr)))
+        flatness = float(np.mean(librosa.feature.spectral_flatness(S=stft)))
+        rolloff = float(np.mean(librosa.feature.spectral_rolloff(S=stft, sr=sr)))
+
+        # Calculate all MFCCs at once for efficiency
+        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=5)
+        mfcc1 = float(np.mean(mfccs[0]))
+        mfcc2 = float(np.mean(mfccs[1]))
+        mfcc3 = float(np.mean(mfccs[2]))
+        mfcc4 = float(np.mean(mfccs[3]))
+        mfcc5 = float(np.mean(mfccs[4]))
         
-        # Store in session if provided
-        if session is not None:
-            session['mood_uris'] = mood_uris
-            session.modified = True
+        audio_features = {
+            'tempo': tempo,
+            'energy': energy,
+            'brightness': brightness,
+            'zcr': zcr,
+            'contrast': contrast,
+            'chroma': chroma,
+            'flatness': flatness,
+            'rolloff': rolloff,
+            'mfcc1': mfcc1,
+            'mfcc2': mfcc2,
+            'mfcc3': mfcc3,
+            'mfcc4': mfcc4,
+            'mfcc5': mfcc5
+        }
         
-        return analyzed_tracks, mood_uris
+        return audio_features
         
     except Exception as e:
-        print(f"Error in analyze_user_library: {e}")
-        import traceback; traceback.print_exc()
+        print(f"Error extracting audio features: {e}")
+        return audio_features
+        
+    finally:
+        # Clean up resources
+        if wav_path and os.path.exists(wav_path):
+            os.remove(wav_path)
+        if y is not None:
+            del y
+        if sr is not None:
+            del sr
+
+def extract_lyrics_faster(track, genius):
+    """Extract lyrics with faster approach - single attempt only."""
+    try:
+        if not genius:
+            return ""
+            
+        print(f"Fetching lyrics for '{track['name']}' by '{track['artist']}'")
+        
+        # First try a clean search
+        clean_title = track['name'].split('(')[0].strip().split('-')[0].strip()
+        artist = track['artist']
+        
+        try:
+            song = genius.search_song(clean_title, artist, get_full_info=False)
+            if song and song.lyrics:
+                return song.lyrics
+        except Exception as e:
+            print(f"Genius search failed: {e}")
+            
+        # If that fails, try Vagalume as fallback
+        lyrics = fetch_lyrics_with_vagalume(clean_title, artist)
+        if lyrics:
+            return lyrics
+            
+        # Return empty string as fallback so we still process the track
+        return ""
+            
+    except Exception as e:
+        print(f"Error extracting lyrics: {e}")
+        return ""
+
+def analyze_user_library(sp, session=None):
+    """Analyze a user's Spotify library in parallel."""
+    print("Starting library analysis...")
+    sys.stdout.flush()
+    
+    # Get the first 100 saved tracks from the user's library
+    print("Fetching user's saved tracks...")
+    sys.stdout.flush()
+    results = sp.current_user_saved_tracks(limit=50)
+    
+    if not results or 'items' not in results:
+        print("No tracks found in user's library")
+        sys.stdout.flush()
+        return {}, {}
+        
+    items = results['items']
+    tracks = []
+    
+    print(f"Processing {len(items)} tracks...")
+    sys.stdout.flush()
+    
+    for item in items:
+        track = item['track']
+        if track and 'id' in track:
+            track_data = {
+                'id': track['id'],
+                'name': track['name'],
+                'artist': track['artists'][0]['name'] if track['artists'] else "Unknown",
+                'uri': track['uri']
+            }
+            tracks.append(track_data)
+    
+    if not tracks:
+        print("No valid track data found")
+        sys.stdout.flush()
+        return {}, {}
+        
+    print(f"Extracted basic info for {len(tracks)} tracks")
+    sys.stdout.flush()
+    
+    # Get a Genius client for lyrics fetching
+    genius = create_genius_client()
+    
+    # Basic resource configuration for concurrent processing
+    resources = {
+        'cpu_count': os.cpu_count() or 2,
+        # Use maximum threads for speed since we've configured the connection pool properly
+        'thread_workers': min(32, max(4, (os.cpu_count() or 2) * 2))
+    }
+    
+    print(f"System resources: {resources['cpu_count']} CPUs, thread workers: {resources['thread_workers']}")
+    sys.stdout.flush()
+    
+    # Process tracks in parallel with ThreadPoolExecutor
+    processed_tracks = []
+    start_time = time.time()
+    
+    # Create batches of tracks for better load balancing
+    batch_size = max(1, min(10, len(tracks) // resources['thread_workers']))
+    batches = [tracks[i:i+batch_size] for i in range(0, len(tracks), batch_size)]
+    print(f"Processing {len(batches)} batches of ~{batch_size} tracks each")
+    sys.stdout.flush()
+    
+    # PHASE 1: Extract all lyrics and audio features in parallel
+    print("\n=== PHASE 1: Extracting lyrics and audio features ===")
+    sys.stdout.flush()
+    with ThreadPoolExecutor(max_workers=resources['thread_workers']) as executor:
+        # Submit all tracks for parallel processing
+        futures = []
+        for track in tracks:
+            future = executor.submit(analyze_track, track, genius)
+            futures.append(future)
+            
+        # Process results as they complete
+        total = len(futures)
+        completed = 0
+        for future in as_completed(futures):
+            completed += 1
+            try:
+                result = future.result()
+                if result:
+                    processed_tracks.append(result)
+                    print(f"Completed {completed}/{total} tracks ({int(completed/total*100)}%)")
+                    sys.stdout.flush()
+            except Exception as e:
+                print(f"Error processing track: {e}")
+                sys.stdout.flush()
+    
+    elapsed = time.time() - start_time
+    print(f"Completed extraction in {elapsed:.2f} seconds")
+    sys.stdout.flush()
+    
+    # Ensure we have tracks to analyze
+    if not processed_tracks:
+        print("No tracks were successfully processed")
+        sys.stdout.flush()
         return [], {}
+        
+    print(f"Successfully processed {len(processed_tracks)} tracks")
+    sys.stdout.flush()
+    
+    # PHASE 2: Classify songs by mood using ChatGPT (after all tracks are processed)
+    print("\n=== PHASE 2: Classifying songs by mood with ChatGPT ===")
+    sys.stdout.flush()
+    
+    # Initialize the OpenAI client if not already done - only once all tracks are processed
+    if not openai_client:
+        print("Initializing OpenAI client for mood classification...")
+        sys.stdout.flush()
+        initialize_openai_client()
+    
+    # Analyze all tracks at once
+    mood_data = analyze_with_chatgpt(processed_tracks, training_data)
+    
+    # Check if all tracks were classified
+    track_ids = [str(track['id']) for track in processed_tracks]
+    missing_track_ids = set(track_ids) - set(mood_data.keys())
+    
+    # If some tracks weren't classified, try again with just those tracks
+    if missing_track_ids and len(missing_track_ids) < len(track_ids):
+        print(f"\n{len(missing_track_ids)} tracks weren't classified. Making a second attempt for these tracks...")
+        sys.stdout.flush()
+        missing_tracks = [t for t in processed_tracks if str(t['id']) in missing_track_ids]
+        second_attempt = analyze_with_chatgpt(missing_tracks, training_data)
+        
+        # Merge the results
+        for track_id, moods in second_attempt.items():
+            if track_id not in mood_data:
+                mood_data[track_id] = moods
+                print(f"Second attempt classified track {track_id} as {moods}")
+                sys.stdout.flush()
+    
+    # Format the results for storage and API response
+    analyzed_tracks = []
+    mood_uris = {}
+    
+    # Process the mood classification results
+    for track_id, track_moods in mood_data.items():
+        # Find the matching track object
+        track_obj = next((t for t in processed_tracks if str(t['id']) == str(track_id)), None)
+        
+        if track_obj and track_moods:
+            # Create a streamlined track object with moods
+            track_with_moods = {
+                'id': track_obj['id'],
+                'name': track_obj['name'],
+                'artist': track_obj['artist'],
+                'uri': track_obj['uri'],
+                'moods': track_moods
+            }
+            analyzed_tracks.append(track_with_moods)
+            
+            # Group tracks by mood for easy retrieval (prevent duplicates using set)
+            for mood in track_moods:
+                if mood not in mood_uris:
+                    mood_uris[mood] = set()  # Use set to prevent duplicates
+                mood_uris[mood].add(track_obj['uri'])  # Add to set instead of append
+    
+    # Convert sets back to lists for JSON serialization
+    for mood in mood_uris:
+        mood_uris[mood] = list(mood_uris[mood])
+    
+    print(f"Final organization: {len(analyzed_tracks)} tracks grouped into {len(mood_uris)} moods")
+    sys.stdout.flush()
+    
+    # Log simplified mood distribution as a dictionary/JSON object
+    if mood_uris:
+        mood_counts = {mood: len(uris) for mood, uris in mood_uris.items()}
+        print(f"\nMood distribution: {json.dumps(mood_counts, indent=2)}")
+        sys.stdout.flush()
+        
+        # Also log which tracks are in each mood for verification
+        print("\n=== DETAILED MOOD BREAKDOWN ===")
+        sys.stdout.flush()
+        for mood, uris in mood_uris.items():
+            track_names = []
+            for uri in uris:
+                track_obj = next((t for t in analyzed_tracks if t['uri'] == uri), None)
+                if track_obj:
+                    track_names.append(f"{track_obj['name']} by {track_obj['artist']}")
+            print(f"{mood}: {len(uris)} tracks")
+            sys.stdout.flush()
+            for name in track_names:
+                print(f"  - {name}")
+                sys.stdout.flush()
+        print("=" * 40)
+        sys.stdout.flush()
+    else:
+        print("No mood distribution available - no tracks were classified")
+        sys.stdout.flush()
+    
+    # Return both processed tracks and mood data
+    return analyzed_tracks, mood_uris
+
+def convert_numpy_to_python(obj):
+    """Convert NumPy datatypes to Python native types for JSON serialization"""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {key: convert_numpy_to_python(value) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [convert_numpy_to_python(item) for item in obj]
+    return obj
+
+def analyze_with_chatgpt(tracks, training_data):
+    """Send tracks to ChatGPT for mood analysis with improved diversity"""
+    try:
+        print(f"Analyzing {len(tracks)} tracks with ChatGPT")
+        sys.stdout.flush()
+        
+        # Ensure OpenAI client is initialized
+        if not openai_client:
+            print("OpenAI client not initialized, initializing now...")
+            sys.stdout.flush()
+            initialize_openai_client()
+            
+        # Check if client was properly initialized
+        if not openai_client:
+            print("Error: OpenAI client not initialized")
+            sys.stdout.flush()
+            return {}
+        else:
+            print(f"Using OpenAI client: {type(openai_client).__name__}")
+            sys.stdout.flush()
+            
+        # Select random examples for more diverse training
+        training_examples = random.sample(training_data, min(5, len(training_data)))
+        print(f"Selected {len(training_examples)} random training examples")
+        sys.stdout.flush()
+        
+        # Prepare example data from training data for few-shot learning
+        examples = []
+        for i, example in enumerate(training_examples):
+            examples.append({
+                "id": f"example_{i}",
+                "name": example.get('song', 'Unknown Song'),
+                "artist": example.get('artist', 'Unknown Artist'),
+                "lyrics": example.get('lyrics', ''),
+                "audio_features": {
+                    "tempo": float(example.get('tempo', 0)),
+                    "energy": float(example.get('energy', 0)),
+                    "brightness": float(example.get('brightness', 0)),
+                    "zcr": float(example.get('zcr', 0)),
+                    "contrast": float(example.get('contrast', 0)),
+                    "chroma": float(example.get('chroma', 0)),
+                    "flatness": float(example.get('flatness', 0)),
+                    "rolloff": float(example.get('rolloff', 0)),
+                    "mfcc1": float(example.get('mfcc1', 0)),
+                    "mfcc2": float(example.get('mfcc2', 0)),
+                    "mfcc3": float(example.get('mfcc3', 0)),
+                    "mfcc4": float(example.get('mfcc4', 0)),
+                    "mfcc5": float(example.get('mfcc5', 0))
+                },
+                "moods": example.get('moods', [])
+            })
+        
+        # Prepare tracks data for analysis
+        tracks_data = []
+        track_ids = []  # Keep track of IDs to ensure all tracks are processed
+        
+        for track in tracks:
+            # Don't skip tracks missing data - we want to analyze as many as possible
+            if not track.get('id'):
+                continue  # Only skip if ID is missing
+                
+            track_ids.append(str(track['id']))
+                
+            # Create a complete dictionary with all fields
+            track_data = {
+                "id": track['id'],
+                "name": track.get('name', 'Unknown'),
+                "artist": track.get('artist', 'Unknown'),
+                "uri": track.get('uri', ''),
+                "lyrics": track.get('lyrics', ''),
+                "audio_features": {
+                    "tempo": track.get('tempo', 0),
+                    "energy": track.get('energy', 0),
+                    "brightness": track.get('brightness', 0),
+                    "zcr": track.get('zcr', 0),
+                    "contrast": track.get('contrast', 0),
+                    "chroma": track.get('chroma', 0),
+                    "flatness": track.get('flatness', 0),
+                    "rolloff": track.get('rolloff', 0),
+                    "mfcc1": track.get('mfcc1', 0),
+                    "mfcc2": track.get('mfcc2', 0),
+                    "mfcc3": track.get('mfcc3', 0),
+                    "mfcc4": track.get('mfcc4', 0),
+                    "mfcc5": track.get('mfcc5', 0)
+                }
+            }
+            tracks_data.append(track_data)
+            
+        if not tracks_data:
+            print("No valid tracks to analyze")
+            return {}
+            
+        # Convert NumPy arrays to Python native types for JSON serialization
+        tracks_data = convert_numpy_to_python(tracks_data)
+        examples = convert_numpy_to_python(examples)
+
+        # Use the complete set of moods including mysterious and mad
+        mood_list = ["happy", "sad", "energetic", "calm", "mad", "romantic", "mysterious", "focused"]
+
+        prompt = f"""You are an expert music mood classifier with deep knowledge of emotional qualities in music across all genres.
+Your task is to analyze songs based on audio features, lyrics, artist name, and song title, and assign the most appropriate mood(s) to each song.
+
+Here are some example songs with their features and corresponding moods:
+```json
+{json.dumps(examples, indent=2)}
+```
+
+Now, analyze these songs and assign the most appropriate moods to each:
+```json
+{json.dumps(tracks_data, indent=2)}
+```
+
+For each song, assign one or more moods from this SPECIFIC list ONLY: {", ".join(mood_list)}
+
+IMPORTANT CLASSIFICATION GUIDELINES:
+1. EVERY song MUST have at least 1 mood assigned - NO exceptions
+2. You MUST give equal consideration to ALL available moods
+3. You MUST classify EVERY SINGLE song in the input list - do not skip any tracks
+4. Use these precise mood definitions:
+   - HAPPY: upbeat lyrics, major key, positive themes, joyful sound
+   - SAD: melancholy lyrics, minor key, themes of loss or heartbreak
+   - ENERGETIC: high tempo, high energy, upbeat rhythms, motivating lyrics
+   - CALM: slow tempo, gentle instruments, peaceful lyrics, low intensity
+   - MAD: aggressive lyrics, intense vocals, distorted sounds, heavy beats, angry themes, frustration, rebellion
+   - ROMANTIC: love themes, emotional vocals, intimate feeling, relationship-focused
+   - MYSTERIOUS: dark atmosphere, enigmatic lyrics, unusual chord progressions, creates a sense of intrigue or coolness, badass vibe
+   - FOCUSED: steady rhythms, minimal vocal distractions, consistent patterns, productivity themes
+
+5. Consider these audio feature correlations:
+   - High tempo + high energy often indicates ENERGETIC or MAD
+   - Low tempo + low energy often indicates CALM or SAD
+   - High contrast + unusual harmonics may indicate MYSTERIOUS
+   - Moderate tempo + high mfcc values may indicate FOCUSED
+   - Emotional vocals + moderate tempo often indicates ROMANTIC
+
+6. Pay special attention to lyrics - they often reveal the primary mood
+7. For instrumental tracks or songs with minimal lyrics, rely more on audio features
+8. Use your knowledge of music genres to help classify:
+   - Heavy metal and punk often have MAD elements
+   - Jazz and ambient often have CALM or MYSTERIOUS elements
+   - Pop and dance often have HAPPY or ENERGETIC elements
+   - Folk and acoustic often have SAD or ROMANTIC elements
+
+9. You MUST classify EVERY song in the list - make your best educated guess based on the available information
+10. If information is limited, use the track name, artist, and audio features to make an informed decision
+
+Return your analysis as a JSON object with song IDs as keys and arrays of moods as values:
+```json
+{{
+  "spotify_id_1": ["happy", "energetic"],
+  "spotify_id_2": ["mysterious", "calm"],
+  "spotify_id_3": ["mad", "energetic"]
+}}
+```
+CRITICAL: Your response MUST include ALL song IDs that were provided in the input. Do not skip any songs.
+"""
+
+        # Call ChatGPT API with proper response format
+        print("Sending request to OpenAI API...")
+        sys.stdout.flush()
+        start_time = time.time()
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert music mood classifier. You MUST classify EVERY song with at least one mood from the specified list ONLY. You MUST give EQUAL consideration to ALL possible moods including 'mad' and 'mysterious'. Every single song in the input MUST be included in your output with at least one mood. Make your best educated guess for each song based on all available information."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}  
+        )
+        elapsed = time.time() - start_time
+        print(f"OpenAI API response received in {elapsed:.2f} seconds")
+        sys.stdout.flush()
+        
+        # Parse response directly as JSON
+        content = completion.choices[0].message.content
+        if content is None:
+            print("Error: Got None response from OpenAI")
+            sys.stdout.flush()
+            return {}
+            
+        try:
+            print("Parsing OpenAI response as JSON...")
+            sys.stdout.flush()
+            moods_by_track = json.loads(content)
+            # Ensure moods_by_track is a dictionary
+            if not isinstance(moods_by_track, dict):
+                print(f"Error: Expected dict response but got {type(moods_by_track)}")
+                sys.stdout.flush()
+                moods_by_track = {}
+                
+            print(f"Successfully analyzed moods for {len(moods_by_track)} tracks")
+            sys.stdout.flush()
+            
+            # Log a sample of the classification results
+            sample_size = min(5, len(moods_by_track))
+            if sample_size > 0:
+                print("\n=== SAMPLE CLASSIFICATION RESULTS ===")
+                sys.stdout.flush()
+                sample_items = list(moods_by_track.items())[:sample_size]
+                for track_id, moods in sample_items:
+                    track_obj = next((t for t in tracks if str(t['id']) == str(track_id)), None)
+                    track_name = track_obj['name'] if track_obj else "Unknown"
+                    artist = track_obj['artist'] if track_obj else "Unknown"
+                    print(f"Track: {track_name} by {artist} → Moods: {', '.join(moods)}")
+                    sys.stdout.flush()
+                print("=" * 40)
+                sys.stdout.flush()
+            
+            # Check for missing tracks - this is just for logging, not for fallback assignment
+            missing_track_ids = set(track_ids) - set(str(id) for id in moods_by_track.keys())
+            if missing_track_ids:
+                print(f"Warning: {len(missing_track_ids)} tracks were not classified by OpenAI")
+                sys.stdout.flush()
+                for track_id in missing_track_ids:
+                    track_obj = next((t for t in tracks if str(t['id']) == track_id), None)
+                    if track_obj:
+                        print(f"Missing classification for: {track_obj['name']} by {track_obj['artist']}")
+                        sys.stdout.flush()
+            
+            # Create a result dictionary with proper string keys and validated moods
+            result = {}
+            
+            # First ensure all track IDs in the response are strings
+            for track_id, moods in moods_by_track.items():
+                # Convert any non-string keys to strings
+                str_id = str(track_id)
+                
+                # Validate moods are from the allowed list
+                valid_moods = []
+                if isinstance(moods, list):
+                    for mood in moods:
+                        if isinstance(mood, str) and mood.lower() in mood_list:
+                            valid_moods.append(mood.lower())
+                
+                # Store valid moods (or empty list if none were valid)
+                result[str_id] = valid_moods
+                
+            return result
+            
+        except Exception as e:
+            print(f"Error processing ChatGPT response: {e}")
+            import traceback; traceback.print_exc()
+            return {}
+        
+    except Exception as e:
+        print(f"Error in analyze_with_chatgpt: {e}")
+        import traceback; traceback.print_exc()
+        return {}
 
 def get_tracks_for_mood(mood_uris, mood, limit=20):
     """Get up to 'limit' URIs for a mood from the session dict."""
