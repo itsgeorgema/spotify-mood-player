@@ -16,16 +16,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire backend directory into the container at /app
 COPY . .
 
-# Make port 8080 available to the world outside this container
-EXPOSE 8080
+# Make port 5000 available for local development and 8080 for production
+EXPOSE 5000 8080
 
-# Define environment variable for the port Gunicorn will listen on
-ENV PORT 8080
-ENV FLASK_ENV production
+# Define environment variable for the port
+ENV PORT 5000
+ENV FLASK_ENV development
 
-# Download the VADER lexicon
-RUN python -m nltk.downloader vader_lexicon
+# For local development with docker-compose
+CMD ["flask", "run", "--host=0.0.0.0"]
 
-# Use a longer timeout for both development and production to avoid worker timeouts during analysis
-CMD ["gunicorn", "--timeout", "300", "--bind", "0.0.0.0:8080", "app:app"]
-# CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"] 
+# For production: 
+# CMD ["gunicorn", "--timeout", "300", "--bind", "0.0.0.0:8080", "app:app"] 
