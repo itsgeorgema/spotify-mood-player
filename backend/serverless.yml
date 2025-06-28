@@ -2,13 +2,16 @@ service: spotify-mood-player
 
 provider:
   name: aws
-  runtime: python3.9
-  stage: ${opt:stage, 'dev'}
-  region: ${opt:region, 'us-east-1'}
+  runtime: python3.13
+  stage: ${opt:stage, 'prod'}
+  region: ${opt:region, 'us-east-2'}
+  handler: wsgi_handler.handler
   environment:
     FLASK_ENV: production
+    FLASK_SECRET_KEY: ${env:FLASK_SECRET_KEY}
     SPOTIFY_CLIENT_ID: ${env:SPOTIFY_CLIENT_ID}
     SPOTIFY_CLIENT_SECRET: ${env:SPOTIFY_CLIENT_SECRET}
+    SPOTIPY_REDIRECT_URI: ${env:SPOTIPY_REDIRECT_URI}
     GENIUS_ACCESS_TOKEN: ${env:GENIUS_ACCESS_TOKEN}
     OPENAI_API_KEY: ${env:OPENAI_API_KEY}
     POSTGRES_USER: ${env:POSTGRES_USER}
@@ -16,6 +19,8 @@ provider:
     POSTGRES_DB: ${env:POSTGRES_DB}
     POSTGRES_HOST: ${env:POSTGRES_HOST}
     FRONTEND_URL: ${env:FRONTEND_URL}
+    SUPABASE_DATABASE_URL: ${env:SUPABASE_DATABASE_URL}
+    AWS_ACCOUNT_ID: ${env:AWS_ACCOUNT_ID}
 
 plugins:
   - serverless-python-requirements
