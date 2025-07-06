@@ -289,6 +289,7 @@ def analyze_library_route():
             sys.stdout.flush()
             return jsonify({
                 "success": True,
+                "message": f"Successfully analyzed {len(analyzed_tracks)} tracks",
                 "tracks_analyzed": len(analyzed_tracks),
                 "moods": list(mood_uris.keys()) if mood_uris else [],
                 "database_stored": db_success
