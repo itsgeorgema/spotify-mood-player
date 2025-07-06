@@ -557,7 +557,39 @@ if __name__ == '__main__':
     if not IS_PRODUCTION:
         local_run_port_str = app.config['SERVER_NAME'].split(':')[-1]
         local_run_port = int(local_run_port_str) if local_run_port_str.isdigit() else 5001
-        app.run(debug=True, host='0.0.0.0', port=local_run_port)
+        
+        # Try to find an available port if the default is in use
+        import socket
+        max_port_attempts = 10
+        original_port = local_run_port
+        
+        for attempt in range(max_port_attempts):
+            try:
+                # Test if port is available
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(('127.0.0.1', local_run_port))
+                
+                print(f"--- Starting Flask app on port {local_run_port} ---")
+                app.run(debug=True, host='0.0.0.0', port=local_run_port)
+                break
+                
+            except OSError as e:
+                if "Address already in use" in str(e):
+                    print(f"--- Port {local_run_port} is already in use ---")
+                    local_run_port += 1
+                    if attempt < max_port_attempts - 1:
+                        print(f"--- Trying port {local_run_port} ---")
+                    else:
+                        print(f"--- Could not find available port after {max_port_attempts} attempts ---")
+                        print(f"--- Original port {original_port} was in use ---")
+                        print(f"--- Please either:")
+                        print(f"---   1. Stop the process using port {original_port}")
+                        print(f"---   2. Set a different PORT environment variable")
+                        print(f"---   3. Use: lsof -ti:{original_port} | xargs kill -9")
+                        sys.exit(1)
+                else:
+                    print(f"--- Error starting Flask app: {e} ---")
+                    sys.exit(1)
     # In production, Gunicorn uses the PORT environment variable set by Render.
     # The SERVER_NAME config is for Flask's URL generation and cookie domain setting.
 

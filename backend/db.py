@@ -1,39 +1,167 @@
 from dotenv import load_dotenv
 import os
-import pg8000.native
+import psycopg2
+import psycopg2.extras
 from contextlib import contextmanager
 import time
 import logging
-import json
 import urllib.parse
+import threading
+from queue import Queue, Empty
 
 logger = logging.getLogger(__name__)
 
 # Load .env from the root directory
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
+# Import configuration
+try:
+    from config import get_config
+    config = get_config()
+except ImportError:
+    # Fallback if config module is not available
+    logger.warning("Could not import config module, using environment variables directly")
+    config = None
+
 # Global connection pool
 connection_pool = None
+_pool_lock = threading.Lock()
+
+class ConnectionPool:
+    """A simple connection pool implementation for better connection management."""
+    
+    def __init__(self, create_connection_func, max_connections=10, min_connections=2):
+        self.create_connection = create_connection_func
+        self.max_connections = max_connections
+        self.min_connections = min_connections
+        self.pool = Queue(maxsize=max_connections)
+        self.current_connections = 0
+        self.lock = threading.Lock()
+        
+        # Pre-create minimum connections
+        for _ in range(min_connections):
+            try:
+                conn = self.create_connection()
+                if conn:
+                    self.pool.put(conn)
+                    self.current_connections += 1
+                else:
+                    logger.warning("Failed to create initial connection for pool")
+            except Exception as e:
+                logger.error(f"Error creating initial connection: {e}")
+    
+    def get_connection(self):
+        """Get a connection from the pool."""
+        try:
+            # Try to get an existing connection
+            conn = self.pool.get_nowait()
+            # Test the connection
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                return conn
+            except Exception as e:
+                logger.warning(f"Connection from pool is dead, creating new one: {e}")
+                conn.close()
+                self.current_connections -= 1
+        except Empty:
+            pass
+        
+        # Create a new connection if pool is empty or connection was dead
+        with self.lock:
+            if self.current_connections < self.max_connections:
+                try:
+                    conn = self.create_connection()
+                    if conn:
+                        self.current_connections += 1
+                        return conn
+                except Exception as e:
+                    logger.error(f"Error creating new connection: {e}")
+        
+        # If we can't create a new connection, wait for one to become available
+        try:
+            conn = self.pool.get(timeout=10)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                return conn
+            except Exception as e:
+                logger.warning(f"Connection from pool is dead: {e}")
+                conn.close()
+                self.current_connections -= 1
+                return None
+        except Empty:
+            logger.error("Timeout waiting for connection from pool")
+            return None
+    
+    def return_connection(self, conn):
+        """Return a connection to the pool."""
+        if conn is None:
+            return
+        
+        try:
+            # Test the connection before returning it
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            self.pool.put_nowait(conn)
+        except Exception as e:
+            logger.warning(f"Connection is dead, not returning to pool: {e}")
+            try:
+                conn.close()
+            except:
+                pass
+            self.current_connections -= 1
+    
+    def close_connection(self, conn):
+        """Close a connection and update the counter."""
+        if conn is None:
+            return
+        
+        try:
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Error closing connection: {e}")
+        
+        with self.lock:
+            self.current_connections -= 1
+    
+    def close_all(self):
+        """Close all connections in the pool."""
+        while not self.pool.empty():
+            try:
+                conn = self.pool.get_nowait()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"Error closing connection: {e}")
+        self.current_connections = 0
 
 def init_database_config():
     """Initialize the database configuration."""
     global connection_pool
     
+    with _pool_lock:
+        if connection_pool is not None:
+            logger.info("Database connection pool already initialized")
+            return True
+    
     try:
-        # Get database URL from environment
-        db_url = os.getenv('SUPABASE_DATABASE_URL')
+        # Get database URL from configuration or environment
+        db_url = config.DATABASE_URL if config else os.getenv('SUPABASE_DATABASE_URL')
         
         if not db_url:
-            logger.warning("No database URL found in environment variables")
+            logger.warning("No database URL found in configuration or environment variables")
             return False
         
-        # For Supabase serverless, we need to use the direct connection URL, not the transaction pooler
-        # If using transaction pooler, replace with direct connection
-        if 'aws-0-' in db_url and ':6543' in db_url:
-            # This is a transaction pooler URL, convert to direct connection
+        # Environment-specific connection handling
+        is_serverless = os.getenv('AWS_LAMBDA_FUNCTION_NAME') is not None
+        is_local_dev = os.getenv('FLASK_ENV') != 'production'
+        
+        # For serverless environments, use direct connection to avoid pooling issues
+        if is_serverless and 'aws-0-' in db_url and ':6543' in db_url:
+            # This is a transaction pooler URL, convert to direct connection for serverless
             db_url = db_url.replace(':6543', ':5432')
-            logger.info("Converted transaction pooler URL to direct connection")
-            
+            logger.info("Converted transaction pooler URL to direct connection for serverless")
+        
         # Parse the URL to extract connection parameters
         parsed_url = urllib.parse.urlparse(db_url)
         dbname = parsed_url.path[1:]  # Remove leading slash
@@ -42,33 +170,60 @@ def init_database_config():
         hostname = parsed_url.hostname
         port = parsed_url.port or 5432
         
-        # Create a connection function with serverless-optimized settings
-        def get_connection():
+        # Get configuration values
+        timeout = config.DATABASE_TIMEOUT if config else (30 if is_serverless else 60)
+        
+        # Create a connection function with environment-specific settings
+        def create_connection():
             try:
-                return pg8000.native.Connection(
-                    user=username,
-                    password=password,
-                    host=hostname,
-                    port=port,
-                    database=dbname,
-                    # Set shorter timeout for serverless (pg8000 uses 'timeout' parameter)
-                    timeout=30
-                )
+                # Build connection string
+                conn_str = f"postgresql://{username}:{password}@{hostname}:{port}/{dbname}"
+                
+                # Configure SSL for production
+                conn_params = {
+                    'connect_timeout': timeout,
+                    'application_name': 'spotify-mood-player'
+                }
+                
+                if not is_local_dev:
+                    conn_params['sslmode'] = 'require'
+                
+                conn = psycopg2.connect(conn_str, **conn_params)
+                conn.autocommit = True  # Use autocommit mode for serverless
+                return conn
             except Exception as e:
                 logger.error(f"Error creating connection: {str(e)}")
                 return None
         
         # Test the connection
-        conn = get_connection()
-        if conn:
-            conn.close()
-            connection_pool = get_connection  # Store the function as our "pool"
-            logger.info("Database connection tested successfully")
-            return True
-        else:
+        test_conn = create_connection()
+        if not test_conn:
             logger.error("Failed to create test connection")
             return False
-            
+        
+        try:
+            with test_conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            test_conn.close()
+        except Exception as e:
+            logger.error(f"Database connection test failed: {e}")
+            return False
+        
+        # Get pool configuration
+        if config:
+            max_connections = config.DATABASE_POOL_SIZE
+            min_connections = config.DATABASE_POOL_MIN
+        else:
+            # Fallback configuration
+            max_connections = 2 if is_serverless else 10
+            min_connections = 1 if is_serverless else 3
+        
+        # Create connection pool
+        connection_pool = ConnectionPool(create_connection, max_connections, min_connections)
+        
+        logger.info(f"Database connection pool initialized successfully (max: {max_connections}, min: {min_connections})")
+        return True
+        
     except Exception as e:
         logger.error(f"Error initializing database: {str(e)}")
         return False
@@ -82,8 +237,7 @@ def get_db_connection():
         return None
         
     try:
-        # connection_pool is actually a function in this case
-        connection = connection_pool()
+        connection = connection_pool.get_connection()
         return connection
     except Exception as e:
         logger.error(f"Error getting database connection: {str(e)}")
@@ -91,36 +245,45 @@ def get_db_connection():
 
 def close_db_connection(connection):
     """Close a database connection."""
-    if connection is not None:
+    if connection is not None and connection_pool is not None:
         try:
-            connection.close()
+            connection_pool.return_connection(connection)
         except Exception as e:
-            logger.error(f"Error closing connection: {str(e)}")
+            logger.error(f"Error returning connection to pool: {str(e)}")
+            # If returning to pool fails, close the connection
+            connection_pool.close_connection(connection)
 
 @contextmanager
 def get_db_cursor():
     """Context manager for database cursor."""
     conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         if conn:
-            yield conn  # With pg8000.native, the connection is the cursor
-            conn.run("COMMIT")  # Use explicit SQL command instead of conn.commit()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            yield cursor
+            # No need to commit since we're using autocommit mode
         else:
             yield None
     except Exception as e:
         logger.error(f"Database error: {str(e)}")
-        if conn:
-            conn.run("ROLLBACK")  # Use explicit SQL command instead of conn.rollback()
+        if conn and not conn.autocommit:
+            try:
+                conn.rollback()
+            except Exception as rollback_error:
+                logger.error(f"Error during rollback: {rollback_error}")
         yield None
     finally:
+        if cursor:
+            cursor.close()
         if conn:
             close_db_connection(conn)
 
 def get_or_create_user(user_id):
     """Get or create a user in the database."""
-    with get_db_cursor() as conn:
-        if conn is None:
+    with get_db_cursor() as cursor:
+        if cursor is None:
             return None
             
         # Check if user exists
@@ -130,24 +293,26 @@ def get_or_create_user(user_id):
             
             # Use raw SQL to avoid prepared statement issues
             select_sql = f"SELECT id FROM users WHERE spotify_id = '{safe_user_id}'"
-            result = conn.run(select_sql)
+            cursor.execute(select_sql)
+            result = cursor.fetchone()
             
             if result:
-                return result[0][0]
+                return result[0]
                 
             # Create new user
             insert_sql = f"INSERT INTO users (spotify_id) VALUES ('{safe_user_id}') RETURNING id"
-            result = conn.run(insert_sql)
+            cursor.execute(insert_sql)
+            result = cursor.fetchone()
             
-            return result[0][0] if result else None
+            return result[0] if result else None
         except Exception as e:
             logger.error(f"Error in get_or_create_user: {str(e)}")
             return None
 
 def get_tracks_by_mood(user_id, mood, limit=20):
     """Get tracks for a user by mood."""
-    with get_db_cursor() as conn:
-        if conn is None:
+    with get_db_cursor() as cursor:
+        if cursor is None:
             return []
             
         try:
@@ -163,10 +328,11 @@ def get_tracks_by_mood(user_id, mood, limit=20):
                 LIMIT 1
             """
             
-            result = conn.run(query)
+            cursor.execute(query)
+            result = cursor.fetchone()
             
-            if result and result[0][0]:
-                return result[0][0]
+            if result and result[0]:
+                return result[0]
             return []
         except Exception as e:
             logger.error(f"Error in get_tracks_by_mood: {str(e)}")
@@ -174,8 +340,8 @@ def get_tracks_by_mood(user_id, mood, limit=20):
 
 def delete_tracks_for_user(user_id):
     """Delete all tracks for a user."""
-    with get_db_cursor() as conn:
-        if conn is None:
+    with get_db_cursor() as cursor:
+        if cursor is None:
             return False
             
         try:
@@ -184,7 +350,7 @@ def delete_tracks_for_user(user_id):
             
             # Use raw SQL to avoid prepared statement issues
             delete_sql = f"DELETE FROM user_mood_tracks WHERE user_spotify_id = '{safe_user_id}'"
-            conn.run(delete_sql)
+            cursor.execute(delete_sql)
             return True
         except Exception as e:
             logger.error(f"Error in delete_tracks_for_user: {str(e)}")
@@ -192,8 +358,8 @@ def delete_tracks_for_user(user_id):
 
 def deduplicate_tracks_for_user(user_id):
     """Remove duplicate tracks within each mood for a user."""
-    with get_db_cursor() as conn:
-        if conn is None:
+    with get_db_cursor() as cursor:
+        if cursor is None:
             return False
             
         try:
@@ -206,7 +372,8 @@ def deduplicate_tracks_for_user(user_id):
                 WHERE user_spotify_id = '{safe_user_id}'
             """
             
-            results = conn.run(select_sql)
+            cursor.execute(select_sql)
+            results = cursor.fetchall()
             
             if not results:
                 logger.info(f"No tracks found for user {user_id}")
@@ -238,7 +405,7 @@ def deduplicate_tracks_for_user(user_id):
                         WHERE id = {record_id}
                     """
                     
-                    conn.run(update_sql)
+                    cursor.execute(update_sql)
                     logger.info(f"Removed {duplicates_in_mood} duplicates from mood '{mood}'")
                     
             if duplicates_removed > 0:
@@ -293,8 +460,8 @@ def insert_tracks(user_id, tracks):
             logger.info(f"Track-mood pairs: {total_track_mood_pairs} total → {total_unique_tracks} unique")
             
         # Use single connection for all operations
-        with get_db_cursor() as conn:
-            if conn is None:
+        with get_db_cursor() as cursor:
+            if cursor is None:
                 logger.error("Failed to get database connection")
                 return False
                 
@@ -315,7 +482,7 @@ def insert_tracks(user_id, tracks):
                     
                     # Delete existing records for this user and mood first using raw SQL
                     delete_sql = f"DELETE FROM user_mood_tracks WHERE user_spotify_id = '{safe_user_id}' AND mood = '{safe_mood}'"
-                    conn.run(delete_sql)
+                    cursor.execute(delete_sql)
                     
                     # Convert Python list to PostgreSQL array format
                     # Escape single quotes in URIs
@@ -328,7 +495,7 @@ def insert_tracks(user_id, tracks):
                     VALUES ('{safe_user_id}', '{safe_mood}', {array_str}, NOW())
                     """
                     
-                    conn.run(insert_sql)
+                    cursor.execute(insert_sql)
                     
                     logger.info(f"Successfully inserted {len(uris)} tracks for mood '{mood}'")
                     successful_insertions += 1
@@ -358,12 +525,19 @@ def wait_for_db(max_retries=30, retry_interval=2):
         try:
             # Initialize config first if needed
             if not connection_pool:
-                init_database_config()
+                if not init_database_config():
+                    retries += 1
+                    if retries < max_retries:
+                        time.sleep(retry_interval)
+                    continue
                 
             conn = get_db_connection()
-            close_db_connection(conn)
-            logger.info("Database connection successful")
-            return True
+            if conn:
+                close_db_connection(conn)
+                logger.info("Database connection successful")
+                return True
+            else:
+                raise Exception("Could not get connection from pool")
         except Exception as e:
             retries += 1
             logger.warning(f"Database connection attempt {retries} failed: {e}")

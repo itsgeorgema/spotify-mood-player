@@ -5,6 +5,7 @@ gunicorn==21.2.0
 python-dotenv==1.0.0
 requests==2.31.0
 pg8000==1.29.4
+scramp==1.4.4
 serverless-wsgi==3.0.3
 openai>=1.0.0
 lyricsgenius>=3.0.1
