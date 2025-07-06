@@ -292,6 +292,12 @@ def analyze_library_route():
             print(f"--- Error importing lyrics_service: {e} ---")
             sys.stdout.flush()
             return jsonify({"error": f"Could not load lyrics analysis module: {str(e)}"}), 500
+        except Exception as analysis_error:
+            print(f"--- Error during analysis: {analysis_error} ---")
+            traceback.print_exc()
+            sys.stdout.flush()
+            # Return the specific error for debugging
+            return jsonify({"error": f"Analysis failed: {str(analysis_error)}"}), 500
             
     except Exception as e:
         print(f"--- Error in /api/analyze: {e} ---")

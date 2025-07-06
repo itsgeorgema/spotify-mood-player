@@ -538,6 +538,16 @@ def analyze_user_library(sp, session=None):
                 print(f"Second attempt classified track {track_id} as {moods}")
                 sys.stdout.flush()
     
+    # If we still have no mood data at all, create a fallback classification
+    if not mood_data and processed_tracks:
+        print("No mood classifications received from OpenAI. Creating fallback classification...")
+        sys.stdout.flush()
+        # Simple fallback: classify all tracks as "energetic" so the user can still use the app
+        for track in processed_tracks:
+            mood_data[str(track['id'])] = ["energetic"]
+        print(f"Created fallback classification for {len(mood_data)} tracks")
+        sys.stdout.flush()
+    
     # Format the results for storage and API response
     analyzed_tracks = []
     mood_uris = {}
@@ -774,7 +784,7 @@ Return your analysis as a JSON object with song IDs as keys and arrays of moods 
 CRITICAL: Your response MUST include ALL song IDs that were provided in the input. Do not skip any songs.
 """
 
-        # Call ChatGPT API with proper response format
+        # Call ChatGPT API with proper response format and timeout handling
         print("Sending request to OpenAI API...")
         sys.stdout.flush()
         start_time = time.time()
@@ -784,7 +794,8 @@ CRITICAL: Your response MUST include ALL song IDs that were provided in the inpu
                 {"role": "system", "content": "You are an expert music mood classifier. You MUST classify EVERY song with at least one mood from the specified list ONLY. You MUST give EQUAL consideration to ALL possible moods including 'mad' and 'mysterious'. Every single song in the input MUST be included in your output with at least one mood. Make your best educated guess for each song based on all available information."},
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"}  
+            response_format={"type": "json_object"},
+            timeout=120  # 2 minute timeout
         )
         elapsed = time.time() - start_time
         print(f"OpenAI API response received in {elapsed:.2f} seconds")
@@ -864,6 +875,12 @@ CRITICAL: Your response MUST include ALL song IDs that were provided in the inpu
     except Exception as e:
         print(f"Error in analyze_with_chatgpt: {e}")
         import traceback; traceback.print_exc()
+        
+        # If it's a timeout error, provide a more helpful message
+        if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+            print("OpenAI API call timed out. This can happen with large track lists.")
+            print("Consider running the analysis again or reducing the number of tracks.")
+        
         return {}
 
 def get_tracks_for_mood(mood_uris, mood, limit=20):

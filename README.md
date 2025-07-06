@@ -52,10 +52,6 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 ## Setup
 
 ### 1. Clone the repository
-```bash
-git clone https://github.com/yourusername/spotify-mood-player.git
-cd spotify-mood-player
-```
 
 ### 2. Environment Variables
 
