@@ -546,6 +546,8 @@ def health_check():
 @app.after_request
 def add_cors_headers(response):
     frontend_url = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
+    # Clean any potential newlines from the URL
+    frontend_url = frontend_url.strip().replace('\n', '').replace('\r', '')
     response.headers['Access-Control-Allow-Origin'] = frontend_url
     response.headers['Access-Control-Allow-Credentials'] = 'true'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,cache-control,Pragma'

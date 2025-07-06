@@ -1,4 +1,4 @@
-service: spotify-mood-player-${env:DEPLOY_TIMESTAMP, '1'}
+service: spotify-mood-player-1751680714
 
 provider:
   name: aws
@@ -99,7 +99,7 @@ functions:
     timeout: 29 # Match API Gateway max timeout
     memorySize: 1024 # 1GB of memory
     layers:
-      - ${cf:spotify-mood-player-layer-${env:DEPLOY_TIMESTAMP, '1'}-${self:provider.stage}.SpotifyMoodPlayerLayerExport}
+      - ${cf:spotify-mood-player-layer-1751680714-${self:provider.stage}.SpotifyMoodPlayerLayerExport}
     events:
       - http:
           path: /

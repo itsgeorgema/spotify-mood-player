@@ -1,4 +1,4 @@
-service: spotify-mood-player-layer-${env:DEPLOY_TIMESTAMP, '1'}
+service: spotify-mood-player-layer-1751680714
 
 provider:
   name: aws
@@ -31,7 +31,7 @@ custom:
     strip: true
     aptCommandsFile: 'apt-commands.txt'
     layer:
-      name: spotify-mood-player-layer-${env:DEPLOY_TIMESTAMP, '1'}-${self:provider.stage}
+      name: spotify-mood-player-layer-1751680714-${self:provider.stage}
       description: "Heavy dependencies for Spotify Mood Player"
       compatibleRuntimes:
         - python3.12
@@ -48,4 +48,4 @@ resources:
       Value:
         Ref: PythonRequirementsLambdaLayer
       Export:
-        Name: spotify-mood-player-layer-${env:DEPLOY_TIMESTAMP, '1'}-${self:provider.stage} 
+        Name: spotify-mood-player-layer-1751680714-${self:provider.stage} 
