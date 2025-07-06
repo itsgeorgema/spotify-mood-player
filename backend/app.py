@@ -38,48 +38,59 @@ init_success = False
 
 for attempt in range(max_init_retries):
     try:
-        # With new serverless approach, just initialize the config
-        init_success = init_database_config()
-        if init_success:
-            print(f"--- Database configuration initialized successfully on attempt {attempt + 1}/{max_init_retries} ---")
-            break
+        print(f"--- Database initialization attempt {attempt + 1}/{max_init_retries} ---")
+        sys.stdout.flush()
+        
+        # Initialize database connection
+        if init_database_config():
+            print("--- Database connection pool initialized successfully ---")
+            sys.stdout.flush()
+            
+            # Run migrations
+            if run_migrations():
+                print("--- Database migrations completed successfully ---")
+                sys.stdout.flush()
+                init_success = True
+                break
+            else:
+                print("--- Database migrations failed ---")
+                sys.stdout.flush()
         else:
-            print(f"--- Database configuration failed on attempt {attempt + 1}/{max_init_retries}, retrying... ---")
+            print("--- Database initialization failed ---")
+            sys.stdout.flush()
+            
     except Exception as e:
-        print(f"--- Database configuration error on attempt {attempt + 1}/{max_init_retries}: {e} ---")
+        print(f"--- Database initialization error: {str(e)} ---")
         traceback.print_exc()
+        sys.stdout.flush()
     
     if attempt < max_init_retries - 1:
-        print(f"--- Waiting {init_retry_delay} seconds before next attempt ---")
+        print(f"--- Retrying in {init_retry_delay} seconds ---")
+        sys.stdout.flush()
         time.sleep(init_retry_delay)
-        init_retry_delay = min(init_retry_delay * 2, 30)  # Exponential backoff, max 30 seconds
 
 if not init_success:
-    print("--- WARNING: Failed to initialize database configuration after multiple attempts. The app will continue but database features may not work. ---")
+    print("--- CRITICAL: Database initialization failed after all retries ---")
+    print("--- Application may not function properly ---")
+    sys.stdout.flush()
 else:
-    print("--- Database configuration initialized and ready ---")
-
-# Run database migrations to ensure tables exist
-if init_success:
-    print("--- Running database migrations ---")
-    try:
-        run_migrations()
-        print("--- Database migrations completed successfully ---")
-    except Exception as e:
-        print(f"--- Error running migrations: {e} ---")
-        traceback.print_exc()
-else:
-    print("--- Skipping migrations since database configuration failed ---")
+    print("--- Database initialization completed successfully ---")
+    sys.stdout.flush()
 
 # No dotenv loading here; all env vars come from Docker Compose
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
-# --- Environment-Specific Configuration ---
+# Set Flask secret key for session encryption
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Configure session settings based on environment
 IS_PRODUCTION = os.getenv('FLASK_ENV') == 'production'
 IS_LAMBDA = os.getenv('AWS_LAMBDA_FUNCTION_NAME') is not None
-backend_port_local_dev = os.getenv('PORT', '5001')
+backend_port_local_dev = int(os.getenv('BACKEND_PORT_LOCAL_DEV', '5001'))
+
+print(f"--- IS_PRODUCTION: {IS_PRODUCTION}, IS_LAMBDA: {IS_LAMBDA} ---")
 
 if IS_PRODUCTION and not IS_LAMBDA:
     fly_app_hostname = os.getenv('FLY_APP_HOSTNAME')
@@ -94,6 +105,7 @@ if IS_PRODUCTION and not IS_LAMBDA:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='None', # 'None' for cross-origin requests
         SESSION_COOKIE_PATH='/',
+        SESSION_COOKIE_DOMAIN=None,  # Let Flask set this automatically
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
     )
@@ -116,6 +128,7 @@ else: # Lambda deployment
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='None', # 'None' for cross-origin requests
         SESSION_COOKIE_PATH='/',
+        SESSION_COOKIE_DOMAIN=None,  # Let Flask set this automatically
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
     )
@@ -125,7 +138,7 @@ print(f"--- Flask Session Cookie SAMESITE: {app.config['SESSION_COOKIE_SAMESITE'
 print(f"--- Flask Session Cookie SECURE: {app.config['SESSION_COOKIE_SECURE']} ---")
 print(f"--- Flask Session Cookie HTTPONLY: {app.config['SESSION_COOKIE_HTTPONLY']} ---")
 print(f"--- Flask Session Cookie PATH: {app.config['SESSION_COOKIE_PATH']} ---")
-if 'SESSION_COOKIE_DOMAIN' in app.config: # Print domain only if explicitly set
+if 'SESSION_COOKIE_DOMAIN' in app.config and app.config['SESSION_COOKIE_DOMAIN']: # Print domain only if explicitly set
     print(f"--- Flask Session Cookie DOMAIN: {app.config.get('SESSION_COOKIE_DOMAIN')} ---")
 sys.stdout.flush()
 
@@ -167,24 +180,48 @@ def spotify_callback():
     try:
         auth_manager = spotify_service.create_spotify_oauth()
         code = request.args.get('code')
+        error = request.args.get('error')
+        
+        # Handle Spotify authorization errors
+        if error:
+            print(f"--- /api/callback: Spotify error: {error} ---")
+            return redirect(f"{frontend_url_from_env}/?error=auth_failed")
         
         if not code:
             print("--- /api/callback: No code provided ---")
             return redirect(f"{frontend_url_from_env}/?error=no_code")
 
         # Exchange authorization code for tokens
-        token_info = auth_manager.get_access_token(code, as_dict=True)
+        try:
+            token_info = auth_manager.get_access_token(code, as_dict=True)
+            if not token_info:
+                print("--- /api/callback: Failed to get token info ---")
+                return redirect(f"{frontend_url_from_env}/?error=auth_failed")
+        except Exception as e:
+            print(f"--- /api/callback: Error getting token: {str(e)} ---")
+            return redirect(f"{frontend_url_from_env}/?error=auth_failed")
 
-        print("--- Token stored in session successfully ---")
-        
         # Store tokens in session with explicit session configuration
         session.permanent = True  # Make the session permanent
         session['spotify_token_info'] = token_info
         session.modified = True
         
-        # Set explicit cookie parameters
+        print("--- Token stored in session successfully ---")
+        print(f"--- Session ID: {session.get('session_id', 'No session ID')} ---")
+        print(f"--- Session keys: {list(session.keys())} ---")
+        
+        # Create response with proper headers
         response = redirect(f"{frontend_url_from_env}/callback?login_success=true")
         response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        # Set session cookie explicitly for better cross-origin support
+        if IS_PRODUCTION:
+            response.set_cookie('session_set', 'true', 
+                              secure=True, 
+                              httponly=False, 
+                              samesite='None',
+                              max_age=86400)  # 24 hours
+        
         return response
 
     except Exception as e:
@@ -195,20 +232,40 @@ def spotify_callback():
 @app.route('/api/check_auth', methods=['GET'])
 def check_auth_status():
     print("--- /api/check_auth route hit ---")
-    print(f"--- /api/check_auth: Request cookies count: {len(request.cookies)} ---")
+    print(f"--- Request cookies count: {len(request.cookies)} ---")
+    print(f"--- Session keys: {list(session.keys())} ---")
+    print(f"--- Session ID exists: {'session_id' in session} ---")
     sys.stdout.flush()
     
     token_info = session.get('spotify_token_info')
     if not token_info:
         print("--- No token_info in session ---")
+        print(f"--- All session data: {dict(session)} ---")
+        sys.stdout.flush()
         return jsonify({"isAuthenticated": False}), 200
 
-    sp_client = spotify_service.get_spotify_client_from_session()
-    if sp_client:
-        print("--- User is authenticated with valid token ---")
-        return jsonify({"isAuthenticated": True}), 200
-    else:
-        print("--- Token validation failed ---")
+    print("--- Found token_info in session ---")
+    
+    try:
+        sp_client = spotify_service.get_spotify_client_from_session()
+        if sp_client:
+            # Test the client by making a simple API call
+            user_profile = sp_client.current_user()
+            if user_profile:
+                print(f"--- User is authenticated: {user_profile.get('id', 'Unknown')} ---")
+                sys.stdout.flush()
+                return jsonify({"isAuthenticated": True}), 200
+            else:
+                print("--- Token validation failed: No user profile ---")
+                sys.stdout.flush()
+                return jsonify({"isAuthenticated": False}), 200
+        else:
+            print("--- Token validation failed: No Spotify client ---")
+            sys.stdout.flush()
+            return jsonify({"isAuthenticated": False}), 200
+    except Exception as e:
+        print(f"--- Error during token validation: {str(e)} ---")
+        sys.stdout.flush()
         return jsonify({"isAuthenticated": False}), 200
 
 @app.route('/api/logout', methods=['POST'])
@@ -341,9 +398,6 @@ def get_mood_tracks_route():
         tracks = get_tracks_by_mood(user_id, mood)
         
         if tracks and len(tracks) > 0:
-            # Return random selection if we have more than enough tracks
-            if len(tracks) > 20:
-                tracks = random.sample(tracks, 20)
                 
             print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from database ---")
             print(f"--- Sample tracks: {tracks[:3] if tracks else 'None'} ---")
@@ -522,10 +576,14 @@ def health_check():
         try:
             conn = get_db_connection()
             if conn:
-                # With pg8000, the connection itself is the cursor
-                conn.run("SELECT 1")
+                # Use proper psycopg2 cursor instead of conn.run()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    cursor.fetchone()
                 close_db_connection(conn)
                 db_status = "connected"
+            else:
+                db_status = "error: could not get connection"
         except Exception as e:
             logger.error(f"Database health check failed: {str(e)}")
             db_status = f"error: {str(e)}"

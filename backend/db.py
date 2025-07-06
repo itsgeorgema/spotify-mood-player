@@ -265,6 +265,7 @@ def get_db_cursor():
             yield cursor
             # No need to commit since we're using autocommit mode
         else:
+            logger.error("Could not get database connection")
             yield None
     except Exception as e:
         logger.error(f"Database error: {str(e)}")
@@ -276,7 +277,10 @@ def get_db_cursor():
         yield None
     finally:
         if cursor:
-            cursor.close()
+            try:
+                cursor.close()
+            except Exception as e:
+                logger.error(f"Error closing cursor: {e}")
         if conn:
             close_db_connection(conn)
 
@@ -284,6 +288,7 @@ def get_or_create_user(user_id):
     """Get or create a user in the database."""
     with get_db_cursor() as cursor:
         if cursor is None:
+            logger.error("Could not get database cursor in get_or_create_user")
             return None
             
         # Check if user exists
@@ -297,22 +302,33 @@ def get_or_create_user(user_id):
             result = cursor.fetchone()
             
             if result:
-                return result[0]
+                user_db_id = result['id']
+                logger.debug(f"Found existing user with ID: {user_db_id}")
+                return user_db_id
                 
             # Create new user
             insert_sql = f"INSERT INTO users (spotify_id) VALUES ('{safe_user_id}') RETURNING id"
             cursor.execute(insert_sql)
             result = cursor.fetchone()
             
-            return result[0] if result else None
+            if result:
+                user_db_id = result['id']
+                logger.info(f"Created new user with ID: {user_db_id}")
+                return user_db_id
+            else:
+                logger.error("Failed to create new user")
+                return None
         except Exception as e:
             logger.error(f"Error in get_or_create_user: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return None
 
 def get_tracks_by_mood(user_id, mood, limit=20):
     """Get tracks for a user by mood."""
     with get_db_cursor() as cursor:
         if cursor is None:
+            logger.error("Could not get database cursor in get_tracks_by_mood")
             return []
             
         try:
@@ -328,14 +344,24 @@ def get_tracks_by_mood(user_id, mood, limit=20):
                 LIMIT 1
             """
             
+            logger.debug(f"Executing query: {query}")
             cursor.execute(query)
             result = cursor.fetchone()
             
-            if result and result[0]:
-                return result[0]
-            return []
+            logger.debug(f"Query result type: {type(result)}, result: {result}")
+            
+            if result and result['track_uris']:
+                track_uris = result['track_uris']
+                logger.info(f"Found {len(track_uris)} tracks for mood '{mood}' for user '{user_id}'")
+                return track_uris
+            else:
+                logger.info(f"No tracks found for mood '{mood}' for user '{user_id}'")
+                return []
         except Exception as e:
             logger.error(f"Error in get_tracks_by_mood: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
 def delete_tracks_for_user(user_id):
@@ -360,6 +386,7 @@ def deduplicate_tracks_for_user(user_id):
     """Remove duplicate tracks within each mood for a user."""
     with get_db_cursor() as cursor:
         if cursor is None:
+            logger.error("Could not get database cursor in deduplicate_tracks_for_user")
             return False
             
         try:
@@ -382,7 +409,9 @@ def deduplicate_tracks_for_user(user_id):
             duplicates_removed = 0
             
             for record in results:
-                record_id, mood, track_uris = record
+                record_id = record['id']
+                mood = record['mood']
+                track_uris = record['track_uris']
                 
                 if not track_uris:
                     continue
@@ -417,6 +446,8 @@ def deduplicate_tracks_for_user(user_id):
             
         except Exception as e:
             logger.error(f"Error in deduplicate_tracks_for_user: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return False
 
 def insert_tracks(user_id, tracks):

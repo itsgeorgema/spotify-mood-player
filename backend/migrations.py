@@ -15,42 +15,44 @@ def run_migrations():
             logger.error("Could not get database connection for migrations")
             return False
             
-        # Create users table if it doesn't exist
-        conn.run("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                spotify_id VARCHAR(255) NOT NULL UNIQUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Create user_mood_tracks table if it doesn't exist
-        conn.run("""
-            CREATE TABLE IF NOT EXISTS user_mood_tracks (
-                id SERIAL PRIMARY KEY,
-                user_spotify_id VARCHAR(255) NOT NULL,
-                mood VARCHAR(100) NOT NULL,
-                track_uris TEXT[] NOT NULL,
-                created_at TIMESTAMP NOT NULL
-            )
-        """)
-        
-        # Add index on user_spotify_id and mood if it doesn't exist
-        try:
-            conn.run("""
-                CREATE INDEX IF NOT EXISTS idx_user_mood_tracks_user_mood ON user_mood_tracks (user_spotify_id, mood)
+        with conn.cursor() as cursor:
+            # Create users table if it doesn't exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    spotify_id VARCHAR(255) NOT NULL UNIQUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
             """)
-        except Exception as e:
-            # Some PostgreSQL versions don't support IF NOT EXISTS for indices
-            # So we'll check if the error is about the index already existing
-            if "already exists" not in str(e):
-                raise
+            
+            # Create user_mood_tracks table if it doesn't exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_mood_tracks (
+                    id SERIAL PRIMARY KEY,
+                    user_spotify_id VARCHAR(255) NOT NULL,
+                    mood VARCHAR(100) NOT NULL,
+                    track_uris TEXT[] NOT NULL,
+                    created_at TIMESTAMP NOT NULL
+                )
+            """)
+            
+            # Add index on user_spotify_id and mood if it doesn't exist
+            try:
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_user_mood_tracks_user_mood ON user_mood_tracks (user_spotify_id, mood)
+                """)
+            except Exception as e:
+                # Some PostgreSQL versions don't support IF NOT EXISTS for indices
+                # So we'll check if the error is about the index already existing
+                if "already exists" not in str(e):
+                    raise
                 
         logger.info("Database migrations completed successfully")
         return True
         
     except Exception as e:
         logger.error(f"Error running migrations: {e}")
+        traceback.print_exc()
         return False
     finally:
         if conn:
