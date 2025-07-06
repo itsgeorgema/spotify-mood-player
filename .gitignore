@@ -46,3 +46,16 @@ ENV/
 # Database
 *.sqlite
 *.db
+
+# Serverless Framework
+.serverless/
+.package/
+
+# AWS Lambda build artifacts
+backend/.serverless/
+backend/.package/
+backend/tmp/
+
+# Build artifacts
+build/
+dist/

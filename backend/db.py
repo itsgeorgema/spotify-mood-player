@@ -176,47 +176,64 @@ def insert_tracks(user_id, tracks):
     if not tracks or not user_id:
         return False
         
-    with get_db_cursor() as conn:
-        if conn is None:
-            return False
-            
-        try:
-            # Create mood buckets
-            mood_uris = {}
-            
-            # Process tracks and organize by mood
-            for track in tracks:
-                if not track.get('moods'):
-                    continue
-                    
-                for mood in track.get('moods', []):
-                    if mood not in mood_uris:
-                        mood_uris[mood] = []
-                        
-                    if track.get('uri'):
-                        mood_uris[mood].append(track['uri'])
-            
-            # Insert each mood's track URIs
-            for mood, uris in mood_uris.items():
-                if not uris:
-                    continue
-                    
-                # Only insert if we have URIs for this mood
-                conn.run(
-                    """
-                    INSERT INTO user_mood_tracks 
-                    (user_spotify_id, mood, track_uris, created_at)
-                    VALUES (:user_id, :mood, :track_uris, NOW())
-                    """,
-                    user_id=user_id,
-                    mood=mood,
-                    track_uris=uris
-                )
+    try:
+        # Create mood buckets
+        mood_uris = {}
+        
+        # Process tracks and organize by mood
+        for track in tracks:
+            if not track.get('moods'):
+                continue
                 
-            return True
-        except Exception as e:
-            logger.error(f"Error in insert_tracks: {str(e)}")
-            return False
+            for mood in track.get('moods', []):
+                if mood not in mood_uris:
+                    mood_uris[mood] = []
+                    
+                if track.get('uri'):
+                    mood_uris[mood].append(track['uri'])
+        
+        # Insert each mood separately with its own connection to avoid prepared statement conflicts
+        for mood, uris in mood_uris.items():
+            if not uris:
+                continue
+                
+            # Use a fresh connection for each insert to avoid prepared statement conflicts
+            with get_db_cursor() as conn:
+                if conn is None:
+                    logger.error(f"Failed to get database connection for mood: {mood}")
+                    continue
+                    
+                try:
+                    # Delete existing records for this user and mood first
+                    conn.run(
+                        "DELETE FROM user_mood_tracks WHERE user_spotify_id = :user_id AND mood = :mood",
+                        user_id=user_id,
+                        mood=mood
+                    )
+                    
+                    # Insert new records
+                    conn.run(
+                        """
+                        INSERT INTO user_mood_tracks 
+                        (user_spotify_id, mood, track_uris, created_at)
+                        VALUES (:user_id, :mood, :track_uris, NOW())
+                        """,
+                        user_id=user_id,
+                        mood=mood,
+                        track_uris=uris
+                    )
+                    logger.info(f"Successfully inserted {len(uris)} tracks for mood '{mood}'")
+                    
+                except Exception as e:
+                    logger.error(f"Error inserting tracks for mood '{mood}': {str(e)}")
+                    # Continue with other moods even if one fails
+                    continue
+                
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error in insert_tracks: {str(e)}")
+        return False
 
 def wait_for_db(max_retries=30, retry_interval=2):
     """Wait for database to be ready with retries."""

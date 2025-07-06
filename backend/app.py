@@ -269,24 +269,29 @@ def analyze_library_route():
             if not analyzed_tracks or not mood_uris:
                 return jsonify({"error": "No tracks could be analyzed"}), 500
                 
-            # Store in database
-            print(f"--- Storing {len(analyzed_tracks)} tracks in database ---")
-            sys.stdout.flush()
-            success = insert_tracks(spotify_id, analyzed_tracks)
-            
-            if not success:
-                return jsonify({"error": "Failed to store tracks in database"}), 500
-                
-            # Store in session too (useful for serverless context where we might not have DB access)
+            # Store in session first (always works)
             session['mood_uris'] = mood_uris
             session.modified = True
+            
+            # Try to store in database (nice to have, but not critical)
+            print(f"--- Storing {len(analyzed_tracks)} tracks in database ---")
+            sys.stdout.flush()
+            db_success = insert_tracks(spotify_id, analyzed_tracks)
+            
+            if db_success:
+                print("--- Database storage successful ---")
+                sys.stdout.flush()
+            else:
+                print("--- Database storage failed, but analysis is complete (using session storage) ---")
+                sys.stdout.flush()
             
             print("--- Analysis complete ---")
             sys.stdout.flush()
             return jsonify({
                 "success": True,
                 "tracks_analyzed": len(analyzed_tracks),
-                "moods": list(mood_uris.keys()) if mood_uris else []
+                "moods": list(mood_uris.keys()) if mood_uris else [],
+                "database_stored": db_success
             })
         except ImportError as e:
             print(f"--- Error importing lyrics_service: {e} ---")
