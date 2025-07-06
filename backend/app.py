@@ -144,14 +144,21 @@ sys.stdout.flush()
 
 # CORS CONFIG
 frontend_url_from_env = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
-allowed_origins = [frontend_url_from_env, "https://spotify-mood-player.vercel.app"]
+# Clean any potential newlines from the URL
+frontend_url_from_env = frontend_url_from_env.strip().replace('\n', '').replace('\r', '')
+allowed_origins = [frontend_url_from_env]
+if "https://spotify-mood-player.vercel.app" not in allowed_origins:
+    allowed_origins.append("https://spotify-mood-player.vercel.app")
+
+print(f"--- CORS allowed origins: {allowed_origins} ---")
+sys.stdout.flush()
 
 CORS(app, 
      resources={r"/api/*": {
          "origins": allowed_origins,
          "supports_credentials": True,
          "expose_headers": ["Set-Cookie", "Authorization"],
-         "allow_headers": ["Content-Type", "Authorization", "cache-control", "Pragma"],
+         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "cache-control", "Pragma"],
          "methods": ["GET", "POST", "OPTIONS"]
      }},
      supports_credentials=True)
@@ -603,13 +610,8 @@ def health_check():
 
 @app.after_request
 def add_cors_headers(response):
-    frontend_url = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
-    # Clean any potential newlines from the URL
-    frontend_url = frontend_url.strip().replace('\n', '').replace('\r', '')
-    response.headers['Access-Control-Allow-Origin'] = frontend_url
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,cache-control,Pragma'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
+    # Skip adding CORS headers since they're already handled by flask-cors
+    # This prevents duplicate headers that cause browser errors
     return response
 
 if __name__ == '__main__':
