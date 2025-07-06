@@ -26,6 +26,13 @@ def init_database_config():
         if not db_url:
             logger.warning("No database URL found in environment variables")
             return False
+        
+        # For Supabase serverless, we need to use the direct connection URL, not the transaction pooler
+        # If using transaction pooler, replace with direct connection
+        if 'aws-0-' in db_url and ':6543' in db_url:
+            # This is a transaction pooler URL, convert to direct connection
+            db_url = db_url.replace(':6543', ':5432')
+            logger.info("Converted transaction pooler URL to direct connection")
             
         # Parse the URL to extract connection parameters
         parsed_url = urllib.parse.urlparse(db_url)
@@ -35,7 +42,7 @@ def init_database_config():
         hostname = parsed_url.hostname
         port = parsed_url.port or 5432
         
-        # Create a simple connection test function
+        # Create a connection function with serverless-optimized settings
         def get_connection():
             try:
                 return pg8000.native.Connection(
@@ -43,7 +50,9 @@ def init_database_config():
                     password=password,
                     host=hostname,
                     port=port,
-                    database=dbname
+                    database=dbname,
+                    # Set shorter timeout for serverless (pg8000 uses 'timeout' parameter)
+                    timeout=30
                 )
             except Exception as e:
                 logger.error(f"Error creating connection: {str(e)}")
@@ -116,15 +125,20 @@ def get_or_create_user(user_id):
             
         # Check if user exists
         try:
-            result = conn.run("SELECT id FROM users WHERE spotify_id = :spotify_id", spotify_id=user_id)
+            # Escape single quotes for SQL safety
+            safe_user_id = user_id.replace("'", "''")
+            
+            # Use raw SQL to avoid prepared statement issues
+            select_sql = f"SELECT id FROM users WHERE spotify_id = '{safe_user_id}'"
+            result = conn.run(select_sql)
+            
             if result:
                 return result[0][0]
                 
             # Create new user
-            result = conn.run(
-                "INSERT INTO users (spotify_id) VALUES (:spotify_id) RETURNING id",
-                spotify_id=user_id
-            )
+            insert_sql = f"INSERT INTO users (spotify_id) VALUES ('{safe_user_id}') RETURNING id"
+            result = conn.run(insert_sql)
+            
             return result[0][0] if result else None
         except Exception as e:
             logger.error(f"Error in get_or_create_user: {str(e)}")
@@ -137,16 +151,19 @@ def get_tracks_by_mood(user_id, mood, limit=20):
             return []
             
         try:
-            result = conn.run(
-                """
+            # Escape single quotes for SQL safety
+            safe_user_id = user_id.replace("'", "''")
+            safe_mood = mood.replace("'", "''")
+            
+            # Use raw SQL to avoid prepared statement issues
+            query = f"""
                 SELECT track_uris FROM user_mood_tracks 
-                WHERE user_spotify_id = :user_id AND mood = :mood
+                WHERE user_spotify_id = '{safe_user_id}' AND mood = '{safe_mood}'
                 ORDER BY created_at DESC
                 LIMIT 1
-                """,
-                user_id=user_id, 
-                mood=mood
-            )
+            """
+            
+            result = conn.run(query)
             
             if result and result[0][0]:
                 return result[0][0]
@@ -162,13 +179,77 @@ def delete_tracks_for_user(user_id):
             return False
             
         try:
-            conn.run(
-                "DELETE FROM user_mood_tracks WHERE user_spotify_id = :user_id",
-                user_id=user_id
-            )
+            # Escape single quotes for SQL safety
+            safe_user_id = user_id.replace("'", "''")
+            
+            # Use raw SQL to avoid prepared statement issues
+            delete_sql = f"DELETE FROM user_mood_tracks WHERE user_spotify_id = '{safe_user_id}'"
+            conn.run(delete_sql)
             return True
         except Exception as e:
             logger.error(f"Error in delete_tracks_for_user: {str(e)}")
+            return False
+
+def deduplicate_tracks_for_user(user_id):
+    """Remove duplicate tracks within each mood for a user."""
+    with get_db_cursor() as conn:
+        if conn is None:
+            return False
+            
+        try:
+            # Escape single quotes for SQL safety
+            safe_user_id = user_id.replace("'", "''")
+            
+            # Get all records for this user
+            select_sql = f"""
+                SELECT id, mood, track_uris FROM user_mood_tracks 
+                WHERE user_spotify_id = '{safe_user_id}'
+            """
+            
+            results = conn.run(select_sql)
+            
+            if not results:
+                logger.info(f"No tracks found for user {user_id}")
+                return True
+                
+            duplicates_removed = 0
+            
+            for record in results:
+                record_id, mood, track_uris = record
+                
+                if not track_uris:
+                    continue
+                    
+                # Convert to set to remove duplicates, then back to list
+                original_count = len(track_uris)
+                unique_uris = list(set(track_uris))
+                
+                if len(unique_uris) < original_count:
+                    duplicates_in_mood = original_count - len(unique_uris)
+                    duplicates_removed += duplicates_in_mood
+                    
+                    # Update the record with deduplicated URIs
+                    safe_uris = [uri.replace("'", "''") for uri in unique_uris]
+                    array_str = "ARRAY['" + "','".join(safe_uris) + "']"
+                    
+                    update_sql = f"""
+                        UPDATE user_mood_tracks 
+                        SET track_uris = {array_str}
+                        WHERE id = {record_id}
+                    """
+                    
+                    conn.run(update_sql)
+                    logger.info(f"Removed {duplicates_in_mood} duplicates from mood '{mood}'")
+                    
+            if duplicates_removed > 0:
+                logger.info(f"Successfully removed {duplicates_removed} duplicate tracks for user {user_id}")
+            else:
+                logger.info(f"No duplicates found for user {user_id}")
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in deduplicate_tracks_for_user: {str(e)}")
             return False
 
 def insert_tracks(user_id, tracks):
@@ -177,8 +258,9 @@ def insert_tracks(user_id, tracks):
         return False
         
     try:
-        # Create mood buckets
+        # Create mood buckets using sets to prevent duplicates
         mood_uris = {}
+        total_track_mood_pairs = 0
         
         # Process tracks and organize by mood
         for track in tracks:
@@ -187,49 +269,83 @@ def insert_tracks(user_id, tracks):
                 
             for mood in track.get('moods', []):
                 if mood not in mood_uris:
-                    mood_uris[mood] = []
+                    mood_uris[mood] = set()  # Use set to prevent duplicates
                     
                 if track.get('uri'):
-                    mood_uris[mood].append(track['uri'])
+                    initial_count = len(mood_uris[mood])
+                    mood_uris[mood].add(track['uri'])  # Use add() instead of append()
+                    total_track_mood_pairs += 1
+                    
+                    # Log if this was a duplicate (set size didn't change)
+                    if len(mood_uris[mood]) == initial_count:
+                        logger.info(f"Prevented duplicate: '{track.get('name', 'Unknown')}' already exists in mood '{mood}'")
         
-        # Insert each mood separately with its own connection to avoid prepared statement conflicts
-        for mood, uris in mood_uris.items():
-            if not uris:
-                continue
+        if not mood_uris:
+            logger.warning("No mood data to insert")
+            return False
+            
+        # Calculate deduplication stats
+        total_unique_tracks = sum(len(uris_set) for uris_set in mood_uris.values())
+        duplicates_prevented = total_track_mood_pairs - total_unique_tracks
+        
+        if duplicates_prevented > 0:
+            logger.info(f"Duplicate prevention: {duplicates_prevented} duplicate track-mood pairs prevented")
+            logger.info(f"Track-mood pairs: {total_track_mood_pairs} total → {total_unique_tracks} unique")
+            
+        # Use single connection for all operations
+        with get_db_cursor() as conn:
+            if conn is None:
+                logger.error("Failed to get database connection")
+                return False
                 
-            # Use a fresh connection for each insert to avoid prepared statement conflicts
-            with get_db_cursor() as conn:
-                if conn is None:
-                    logger.error(f"Failed to get database connection for mood: {mood}")
+            successful_insertions = 0
+            total_moods = len(mood_uris)
+            
+            for mood, uris_set in mood_uris.items():
+                if not uris_set:
                     continue
                     
                 try:
-                    # Delete existing records for this user and mood first
-                    conn.run(
-                        "DELETE FROM user_mood_tracks WHERE user_spotify_id = :user_id AND mood = :mood",
-                        user_id=user_id,
-                        mood=mood
-                    )
+                    # Convert set to list to maintain order and enable indexing
+                    uris = list(uris_set)
                     
-                    # Insert new records
-                    conn.run(
-                        """
-                        INSERT INTO user_mood_tracks 
-                        (user_spotify_id, mood, track_uris, created_at)
-                        VALUES (:user_id, :mood, :track_uris, NOW())
-                        """,
-                        user_id=user_id,
-                        mood=mood,
-                        track_uris=uris
-                    )
+                    # Escape single quotes in user_id and mood for SQL safety
+                    safe_user_id = user_id.replace("'", "''")
+                    safe_mood = mood.replace("'", "''")
+                    
+                    # Delete existing records for this user and mood first using raw SQL
+                    delete_sql = f"DELETE FROM user_mood_tracks WHERE user_spotify_id = '{safe_user_id}' AND mood = '{safe_mood}'"
+                    conn.run(delete_sql)
+                    
+                    # Convert Python list to PostgreSQL array format
+                    # Escape single quotes in URIs
+                    safe_uris = [uri.replace("'", "''") for uri in uris]
+                    array_str = "ARRAY['" + "','".join(safe_uris) + "']"
+                    
+                    # Insert new records using raw SQL with proper array formatting
+                    insert_sql = f"""
+                    INSERT INTO user_mood_tracks (user_spotify_id, mood, track_uris, created_at)
+                    VALUES ('{safe_user_id}', '{safe_mood}', {array_str}, NOW())
+                    """
+                    
+                    conn.run(insert_sql)
+                    
                     logger.info(f"Successfully inserted {len(uris)} tracks for mood '{mood}'")
+                    successful_insertions += 1
                     
                 except Exception as e:
-                    logger.error(f"Error inserting tracks for mood '{mood}': {str(e)}")
+                    logger.error(f"Error inserting tracks for mood '{mood}': {e}")
                     # Continue with other moods even if one fails
                     continue
-                
-        return True
+                    
+            # Consider it successful if at least half the moods were inserted
+            success_threshold = max(1, total_moods // 2)
+            if successful_insertions >= success_threshold:
+                logger.info(f"Database insertion successful: {successful_insertions}/{total_moods} moods inserted")
+                return True
+            else:
+                logger.warning(f"Database insertion partially failed: only {successful_insertions}/{total_moods} moods inserted")
+                return False
         
     except Exception as e:
         logger.error(f"Error in insert_tracks: {str(e)}")

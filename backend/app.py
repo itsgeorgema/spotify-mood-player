@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 import time
 import spotify_service
-from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection, init_database_config, close_db_connection
+from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection, init_database_config, close_db_connection, deduplicate_tracks_for_user
 import logging
 import random
 from migrations import run_migrations
@@ -173,7 +173,7 @@ def spotify_callback():
             return redirect(f"{frontend_url_from_env}/?error=no_code")
 
         # Exchange authorization code for tokens
-        token_info = auth_manager.get_access_token(code)
+        token_info = auth_manager.get_access_token(code, as_dict=True)
 
         print("--- Token stored in session successfully ---")
         
@@ -244,7 +244,7 @@ def spotify_logout():
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze_library_route():
-    """route to manually trigger library analysis"""
+    """Analyze user's library and store tracks in database only"""
     print("--- /api/analyze route hit ---")
     sys.stdout.flush()
     
@@ -269,11 +269,7 @@ def analyze_library_route():
             if not analyzed_tracks or not mood_uris:
                 return jsonify({"error": "No tracks could be analyzed"}), 500
                 
-            # Store in session first (always works)
-            session['mood_uris'] = mood_uris
-            session.modified = True
-            
-            # Try to store in database (nice to have, but not critical)
+            # Store in database only (no session storage)
             print(f"--- Storing {len(analyzed_tracks)} tracks in database ---")
             sys.stdout.flush()
             db_success = insert_tracks(spotify_id, analyzed_tracks)
@@ -281,19 +277,20 @@ def analyze_library_route():
             if db_success:
                 print("--- Database storage successful ---")
                 sys.stdout.flush()
-            else:
-                print("--- Database storage failed, but analysis is complete (using session storage) ---")
+                print("--- Analysis complete ---")
                 sys.stdout.flush()
-            
-            print("--- Analysis complete ---")
-            sys.stdout.flush()
-            return jsonify({
-                "success": True,
-                "message": f"Successfully analyzed {len(analyzed_tracks)} tracks",
-                "tracks_analyzed": len(analyzed_tracks),
-                "moods": list(mood_uris.keys()) if mood_uris else [],
-                "database_stored": db_success
-            })
+                return jsonify({
+                    "success": True,
+                    "message": f"Successfully analyzed {len(analyzed_tracks)} tracks",
+                    "tracks_analyzed": len(analyzed_tracks),
+                    "moods": list(mood_uris.keys()) if mood_uris else [],
+                    "database_stored": True
+                })
+            else:
+                print("--- Database storage failed ---")
+                sys.stdout.flush()
+                return jsonify({"error": "Failed to store tracks in database"}), 500
+                
         except ImportError as e:
             print(f"--- Error importing lyrics_service: {e} ---")
             sys.stdout.flush()
@@ -313,7 +310,7 @@ def analyze_library_route():
 
 @app.route('/api/mood-tracks', methods=['GET'])
 def get_mood_tracks_route():
-    """Get tracks for a specific mood from the database"""
+    """Get tracks for a specific mood from the database only"""
     print("--- /api/mood-tracks route hit ---")
     sys.stdout.flush()
     
@@ -329,70 +326,84 @@ def get_mood_tracks_route():
         logger.warning("No mood specified in /api/mood-tracks")
         return jsonify({"error": "No mood specified"}), 400
     
-    # First check if we have tracks in session (prioritize session for serverless context)
-    session_mood_uris = session.get('mood_uris', {})
-    if session_mood_uris and mood in session_mood_uris and len(session_mood_uris[mood]) > 0:
-        # Return random selection if we have more than enough tracks
-        tracks = session_mood_uris[mood]
-        if len(tracks) > 20:
-            tracks = random.sample(tracks, 20)
-            
-        print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from session ---")
-        sys.stdout.flush()
-        return jsonify({"tracks": tracks})
+    print(f"--- Requested mood: '{mood}' ---")
+    sys.stdout.flush()
     
-    # If not in session, try database
+    # Get tracks from database only
     try:
         user_profile = sp.current_user()
-        if user_profile and 'id' in user_profile:
-            user_id = user_profile['id']
-            tracks = get_tracks_by_mood(user_id, mood)
-            
-            if tracks and len(tracks) > 0:
-                print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from database ---")
-                sys.stdout.flush()
-                return jsonify({"tracks": tracks})
-        else:
+        if not user_profile or 'id' not in user_profile:
             print("--- User profile not available ---")
             sys.stdout.flush()
+            return jsonify({"error": "Could not fetch user profile"}), 401
+            
+        user_id = user_profile['id']
+        tracks = get_tracks_by_mood(user_id, mood)
+        
+        if tracks and len(tracks) > 0:
+            # Return random selection if we have more than enough tracks
+            if len(tracks) > 20:
+                tracks = random.sample(tracks, 20)
+                
+            print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from database ---")
+            print(f"--- Sample tracks: {tracks[:3] if tracks else 'None'} ---")
+            sys.stdout.flush()
+            # Frontend expects 'track_uris' field, not 'tracks'
+            return jsonify({"track_uris": tracks})
+        else:
+            print(f"--- No tracks found for mood '{mood}' in database ---")
+            sys.stdout.flush()
+            return jsonify({"track_uris": [], "message": f"No tracks found for mood '{mood}'. Please analyze your library first."})
+            
     except Exception as e:
         logger.error(f"Database error in get_mood_tracks_route: {e}")
-        # Continue to fallback
-    
-    # If we still don't have tracks, try the fallback mood analysis
-    try:
-        print(f"--- No tracks found for mood '{mood}', attempting fallback mood analysis ---")
+        print(f"--- Database error: {e} ---")
         sys.stdout.flush()
-        
-        # Get the user's library again
-        try:
-            analyzed_tracks, mood_uris = analyze_user_library(sp, session)
-            
-            # Store the results in session for future use
-            if mood_uris:
-                session['mood_uris'] = mood_uris
-                session.modified = True
-                
-            # Get tracks for the requested mood
-            if mood_uris and mood in mood_uris:
-                tracks = mood_uris[mood]
-                if len(tracks) > 20:
-                    tracks = random.sample(tracks, 20)
-                    
-                print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from fallback analysis ---")
-                sys.stdout.flush()
-                return jsonify({"tracks": tracks})
-        except Exception as e:
-            logger.error(f"Error in fallback analysis: {e}")
-            traceback.print_exc()
-    except ImportError as e:
-        print(f"--- Error importing lyrics_service: {e} ---")
-        sys.stdout.flush()
-        
-    # If we still don't have tracks, return empty list
-    print(f"--- No tracks found for mood '{mood}' ---")
+        return jsonify({"error": "Database error occurred"}), 500
+
+@app.route('/api/deduplicate', methods=['POST'])
+def deduplicate_tracks_route():
+    """Remove duplicate tracks within each mood for the current user"""
+    print("--- /api/deduplicate route hit ---")
     sys.stdout.flush()
-    return jsonify({"tracks": []})
+    
+    # Verify user authentication
+    sp = spotify_service.get_spotify_client_from_session()
+    if not sp:
+        logger.warning("User not authenticated in /api/deduplicate")
+        return jsonify({"error": "Not authenticated"}), 401
+        
+    try:
+        user_profile = sp.current_user()
+        if not user_profile or 'id' not in user_profile:
+            print("--- User profile not available ---")
+            sys.stdout.flush()
+            return jsonify({"error": "Could not fetch user profile"}), 401
+            
+        user_id = user_profile['id']
+        
+        print(f"--- Starting deduplication for user {user_id} ---")
+        sys.stdout.flush()
+        
+        success = deduplicate_tracks_for_user(user_id)
+        
+        if success:
+            print("--- Deduplication completed successfully ---")
+            sys.stdout.flush()
+            return jsonify({
+                "success": True,
+                "message": "Duplicate tracks removed successfully"
+            })
+        else:
+            print("--- Deduplication failed ---")
+            sys.stdout.flush()
+            return jsonify({"error": "Failed to remove duplicates"}), 500
+            
+    except Exception as e:
+        logger.error(f"Error in deduplicate_tracks_route: {e}")
+        print(f"--- Error in deduplication: {e} ---")
+        sys.stdout.flush()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/play', methods=['POST'])
 def play_tracks_route():

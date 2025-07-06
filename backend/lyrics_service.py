@@ -116,12 +116,34 @@ def load_training_data():
         with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
+                # Handle both 'song' and 'song name' column names
+                song_name = row.get('song') or row.get('song name', 'Unknown')
                 moods = [mood.strip() for mood in row['moods'].split(',')]
-                training_data.append({'song': row['song'],'artist': row['artist'],'lyrics': row['lyrics'], 'moods': moods,'tempo': row['tempo'],'energy': row['energy'],'brightness': row['brightness'],'zcr': row['zcr'],'contrast': row['contrast'],'chroma': row['chroma'],'flatness': row['flatness'],'rolloff': row['rolloff'],'mfcc1': row['mfcc1'],'mfcc2': row['mfcc2'],'mfcc3': row['mfcc3'],'mfcc4': row['mfcc4'],'mfcc5': row['mfcc5']})
+                training_data.append({
+                    'song': song_name,
+                    'artist': row['artist'],
+                    'lyrics': row['lyrics'], 
+                    'moods': moods,
+                    'tempo': float(row['tempo']) if row['tempo'] else 0,
+                    'energy': float(row['energy']) if row['energy'] else 0,
+                    'brightness': float(row['brightness']) if row['brightness'] else 0,
+                    'zcr': float(row['zcr']) if row['zcr'] else 0,
+                    'contrast': float(row['contrast']) if row['contrast'] else 0,
+                    'chroma': float(row['chroma']) if row['chroma'] else 0,
+                    'flatness': float(row['flatness']) if row['flatness'] else 0,
+                    'rolloff': float(row['rolloff']) if row['rolloff'] else 0,
+                    'mfcc1': float(row['mfcc1']) if row['mfcc1'] else 0,
+                    'mfcc2': float(row['mfcc2']) if row['mfcc2'] else 0,
+                    'mfcc3': float(row['mfcc3']) if row['mfcc3'] else 0,
+                    'mfcc4': float(row['mfcc4']) if row['mfcc4'] else 0,
+                    'mfcc5': float(row['mfcc5']) if row['mfcc5'] else 0
+                })
         print(f"Loaded {len(training_data)} training examples from CSV")
         return training_data
     except Exception as e:
         print(f"Error loading training data: {e}")
+        import traceback
+        traceback.print_exc()
         # Return minimal training data as fallback
         return [
             {"lyrics": "I'm so happy", "moods": ["happy"],'tempo': 0,'energy': 0,'brightness': 0,'zcr': 0,'contrast': 0,'chroma': 0,'flatness': 0,'rolloff': 0,'mfcc1': 0,'mfcc2': 0,'mfcc3': 0,'mfcc4': 0,'mfcc5': 0},
@@ -492,7 +514,7 @@ def analyze_user_library(sp, session=None):
                     sys.stdout.flush()
             except Exception as e:
                 print(f"Error processing track: {e}")
-                sys.stdout.flush()
+        sys.stdout.flush()
     
     elapsed = time.time() - start_time
     print(f"Completed extraction in {elapsed:.2f} seconds")
@@ -508,44 +530,39 @@ def analyze_user_library(sp, session=None):
     sys.stdout.flush()
     
     # PHASE 2: Classify songs by mood using ChatGPT (after all tracks are processed)
-    print("\n=== PHASE 2: Classifying songs by mood with ChatGPT ===")
+    print("\n=== PHASE 2: Mood Classification ===")
     sys.stdout.flush()
     
     # Initialize the OpenAI client if not already done - only once all tracks are processed
     if not openai_client:
-        print("Initializing OpenAI client for mood classification...")
-        sys.stdout.flush()
         initialize_openai_client()
     
-    # Analyze all tracks at once
-    mood_data = analyze_with_chatgpt(processed_tracks, training_data)
+    # Classify all tracks with persistent retry logic - KEEP TRYING UNTIL ALL ARE CLASSIFIED
+    mood_data = classify_tracks_with_retry(processed_tracks, training_data)
     
-    # Check if all tracks were classified
+    # Continue processing with whatever classifications we have (the retry function ensures maximum coverage)
+    if not mood_data:
+        print("WARNING: No tracks were classified by OpenAI after all attempts. Returning empty results.")
+        sys.stdout.flush()
+        return [], {}
+    
+    # Process all successfully classified tracks
     track_ids = [str(track['id']) for track in processed_tracks]
-    missing_track_ids = set(track_ids) - set(mood_data.keys())
+    classified_track_ids = set(mood_data.keys())
+    missing_track_ids = set(track_ids) - classified_track_ids
     
-    # If some tracks weren't classified, try again with just those tracks
-    if missing_track_ids and len(missing_track_ids) < len(track_ids):
-        print(f"\n{len(missing_track_ids)} tracks weren't classified. Making a second attempt for these tracks...")
+    if missing_track_ids:
+        print(f"NOTE: {len(missing_track_ids)} tracks were not classified after extensive retry attempts:")
         sys.stdout.flush()
-        missing_tracks = [t for t in processed_tracks if str(t['id']) in missing_track_ids]
-        second_attempt = analyze_with_chatgpt(missing_tracks, training_data)
-        
-        # Merge the results
-        for track_id, moods in second_attempt.items():
-            if track_id not in mood_data:
-                mood_data[track_id] = moods
-                print(f"Second attempt classified track {track_id} as {moods}")
+        for track_id in list(missing_track_ids)[:5]:  # Show first 5
+            track_obj = next((t for t in processed_tracks if str(t['id']) == track_id), None)
+            if track_obj:
+                print(f"  - {track_obj['name']} by {track_obj['artist']}")
                 sys.stdout.flush()
-    
-    # If we still have no mood data at all, create a fallback classification
-    if not mood_data and processed_tracks:
-        print("No mood classifications received from OpenAI. Creating fallback classification...")
-        sys.stdout.flush()
-        # Simple fallback: classify all tracks as "energetic" so the user can still use the app
-        for track in processed_tracks:
-            mood_data[str(track['id'])] = ["energetic"]
-        print(f"Created fallback classification for {len(mood_data)} tracks")
+        if len(missing_track_ids) > 5:
+            print(f"  ... and {len(missing_track_ids) - 5} more")
+            sys.stdout.flush()
+        print("Continuing with successfully classified tracks...")
         sys.stdout.flush()
     
     # Format the results for storage and API response
@@ -600,14 +617,14 @@ def analyze_user_library(sp, session=None):
             sys.stdout.flush()
             for name in track_names:
                 print(f"  - {name}")
-                sys.stdout.flush()
+        sys.stdout.flush()
         print("=" * 40)
         sys.stdout.flush()
     else:
         print("No mood distribution available - no tracks were classified")
         sys.stdout.flush()
     
-    # Return both processed tracks and mood data
+    # Always return results even if not all tracks were classified
     return analyzed_tracks, mood_uris
 
 def convert_numpy_to_python(obj):
@@ -627,8 +644,117 @@ def convert_numpy_to_python(obj):
         return [convert_numpy_to_python(item) for item in obj]
     return obj
 
+def classify_tracks_with_retry(tracks, training_data, max_retries=20):
+    """Classify tracks with ChatGPT using retry logic until ALL tracks are classified - NEVER GIVE UP"""
+    all_mood_data = {}
+    remaining_tracks = tracks.copy()
+    retry_count = 0
+    
+    print(f"Starting classification of {len(tracks)} tracks (will retry up to {max_retries} times until ALL are classified)")
+    sys.stdout.flush()
+    
+    while remaining_tracks and retry_count < max_retries:
+        retry_count += 1
+        print(f"\n--- Attempt {retry_count}/{max_retries} for {len(remaining_tracks)} tracks ---")
+        sys.stdout.flush()
+        
+        # Strategy: For later attempts, try smaller batches or individual tracks
+        if retry_count > 10 and len(remaining_tracks) > 5:
+            print("Using smaller batch strategy for better success rate...")
+            sys.stdout.flush()
+            batch_size = min(5, max(1, len(remaining_tracks) // 3))
+            tracks_to_try = remaining_tracks[:batch_size]
+        elif retry_count > 15:
+            print("Trying individual track classification for maximum accuracy...")
+            sys.stdout.flush()
+            tracks_to_try = remaining_tracks[:1]  # Try one at a time
+        else:
+            tracks_to_try = remaining_tracks
+        
+        # Call ChatGPT with selected tracks
+        attempt_results = analyze_with_chatgpt(tracks_to_try, training_data)
+        
+        if not attempt_results:
+            print(f"Attempt {retry_count} failed - no classifications received, retrying...")
+            sys.stdout.flush()
+            continue
+        
+        # Process successful classifications
+        newly_classified = []
+        for track_id, moods in attempt_results.items():
+            if track_id not in all_mood_data and moods:  # Only accept valid mood classifications
+                all_mood_data[track_id] = moods
+                newly_classified.append(track_id)
+        
+        print(f"Attempt {retry_count} successfully classified {len(newly_classified)} tracks")
+        sys.stdout.flush()
+        
+        # Remove successfully classified tracks from remaining list
+        remaining_tracks = [t for t in remaining_tracks if str(t['id']) not in newly_classified]
+        
+        if not remaining_tracks:
+            print("✅ SUCCESS: All tracks successfully classified!")
+            sys.stdout.flush()
+            break
+        else:
+            print(f"Still need to classify {len(remaining_tracks)} tracks - continuing...")
+            sys.stdout.flush()
+            
+            # Log which tracks still need classification
+            for track in remaining_tracks[:3]:  # Show first 3
+                print(f"  - {track.get('name', 'Unknown')} by {track.get('artist', 'Unknown')}")
+                sys.stdout.flush()
+            if len(remaining_tracks) > 3:
+                print(f"  ... and {len(remaining_tracks) - 3} more")
+                sys.stdout.flush()
+    
+    # If we still have unclassified tracks after max_retries, increase retries automatically
+    if remaining_tracks and retry_count >= max_retries:
+        print(f"\n🔄 Reached {max_retries} attempts but {len(remaining_tracks)} tracks still need classification")
+        print("Switching to ULTRA-PERSISTENT mode with individual track classification...")
+        sys.stdout.flush()
+        
+        # Try each remaining track individually with extended patience
+        for track in remaining_tracks.copy():
+            print(f"Individual classification attempt for: {track.get('name', 'Unknown')} by {track.get('artist', 'Unknown')}")
+            sys.stdout.flush()
+            
+            # Try this track up to 5 times individually
+            for individual_attempt in range(1, 6):
+                single_track_result = analyze_with_chatgpt([track], training_data)
+                if single_track_result and str(track['id']) in single_track_result:
+                    all_mood_data[str(track['id'])] = single_track_result[str(track['id'])]
+                    remaining_tracks.remove(track)
+                    print(f"✅ Successfully classified {track.get('name', 'Unknown')} on individual attempt {individual_attempt}")
+                    sys.stdout.flush()
+                    break
+                else:
+                    print(f"Individual attempt {individual_attempt}/5 failed, retrying...")
+                    sys.stdout.flush()
+        
+        # Final check after individual attempts
+        if not remaining_tracks:
+            print("✅ SUCCESS: All tracks finally classified using individual track strategy!")
+            sys.stdout.flush()
+        else:
+            print(f"⚠️ {len(remaining_tracks)} tracks still unclassified after all strategies")
+            sys.stdout.flush()
+    
+    # Final verification
+    total_expected = len(tracks)
+    total_classified = len(all_mood_data)
+    
+    if total_classified == total_expected:
+        print(f"\n🎉 COMPLETE SUCCESS: All {total_expected} tracks classified successfully!")
+        sys.stdout.flush()
+    else:
+        print(f"\n📊 Classification Results: {total_classified}/{total_expected} tracks classified ({(total_classified/total_expected)*100:.1f}% success rate)")
+        sys.stdout.flush()
+    
+    return all_mood_data
+
 def analyze_with_chatgpt(tracks, training_data):
-    """Send tracks to ChatGPT for mood analysis with improved diversity"""
+    """Send tracks to ChatGPT for mood analysis - STRICT MODE (no fallbacks)"""
     try:
         print(f"Analyzing {len(tracks)} tracks with ChatGPT")
         sys.stdout.flush()
@@ -649,7 +775,7 @@ def analyze_with_chatgpt(tracks, training_data):
             sys.stdout.flush()
             
         # Select random examples for more diverse training
-        training_examples = random.sample(training_data, min(5, len(training_data)))
+        training_examples = random.sample(training_data, min(15, len(training_data)))
         print(f"Selected {len(training_examples)} random training examples")
         sys.stdout.flush()
         
@@ -717,61 +843,41 @@ def analyze_with_chatgpt(tracks, training_data):
             
         if not tracks_data:
             print("No valid tracks to analyze")
+            sys.stdout.flush()
             return {}
             
-        # Convert NumPy arrays to Python native types for JSON serialization
+        # Clean up data before sending to OpenAI
         tracks_data = convert_numpy_to_python(tracks_data)
-        examples = convert_numpy_to_python(examples)
+        
+        # Create the prompt
+        mood_list = ['happy', 'sad', 'mad', 'calm', 'romantic', 'energetic', 'focused', 'mysterious']
+        
+        prompt = f"""
+You are an expert music mood classifier. Analyze the following songs and classify each with 1-3 moods from this EXACT list:
+{mood_list}
 
-        # Use the complete set of moods including mysterious and mad
-        mood_list = ["happy", "sad", "energetic", "calm", "mad", "romantic", "mysterious", "focused"]
-
-        prompt = f"""You are an expert music mood classifier with deep knowledge of emotional qualities in music across all genres.
-Your task is to analyze songs based on audio features, lyrics, artist name, and song title, and assign the most appropriate mood(s) to each song.
-
-Here are some example songs with their features and corresponding moods:
-```json
+Here are some training examples:
 {json.dumps(examples, indent=2)}
-```
 
-Now, analyze these songs and assign the most appropriate moods to each:
-```json
+Now classify these songs:
 {json.dumps(tracks_data, indent=2)}
-```
 
-For each song, assign one or more moods from this SPECIFIC list ONLY: {", ".join(mood_list)}
-
-IMPORTANT CLASSIFICATION GUIDELINES:
-1. EVERY song MUST have at least 1 mood assigned - NO exceptions
-2. You MUST give equal consideration to ALL available moods
+CRITICAL REQUIREMENTS:
+1. ONLY use moods from the provided list: {mood_list}
+2. Each song must have 1-3 moods (never 0, never more than 3)
 3. You MUST classify EVERY SINGLE song in the input list - do not skip any tracks
-4. Use these precise mood definitions:
-   - HAPPY: upbeat lyrics, major key, positive themes, joyful sound
-   - SAD: melancholy lyrics, minor key, themes of loss or heartbreak
-   - ENERGETIC: high tempo, high energy, upbeat rhythms, motivating lyrics
-   - CALM: slow tempo, gentle instruments, peaceful lyrics, low intensity
-   - MAD: aggressive lyrics, intense vocals, distorted sounds, heavy beats, angry themes, frustration, rebellion
-   - ROMANTIC: love themes, emotional vocals, intimate feeling, relationship-focused
-   - MYSTERIOUS: dark atmosphere, enigmatic lyrics, unusual chord progressions, creates a sense of intrigue or coolness, badass vibe
-   - FOCUSED: steady rhythms, minimal vocal distractions, consistent patterns, productivity themes
-
-5. Consider these audio feature correlations:
-   - High tempo + high energy often indicates ENERGETIC or MAD
-   - Low tempo + low energy often indicates CALM or SAD
-   - High contrast + unusual harmonics may indicate MYSTERIOUS
-   - Moderate tempo + high mfcc values may indicate FOCUSED
-   - Emotional vocals + moderate tempo often indicates ROMANTIC
-
-6. Pay special attention to lyrics - they often reveal the primary mood
+4. Give EQUAL consideration to ALL moods including 'mad' and 'mysterious'
+5. Base your classification on:
+   - Lyrics (emotional content, themes, tone)
+   - Audio features (tempo, energy, brightness, etc.)
+   - Song title and artist context
+   - Musical style and genre indicators
+6. Consider the full emotional spectrum - not every song needs to be happy or energetic
 7. For instrumental tracks or songs with minimal lyrics, rely more on audio features
-8. Use your knowledge of music genres to help classify:
-   - Heavy metal and punk often have MAD elements
-   - Jazz and ambient often have CALM or MYSTERIOUS elements
-   - Pop and dance often have HAPPY or ENERGETIC elements
-   - Folk and acoustic often have SAD or ROMANTIC elements
-
-9. You MUST classify EVERY song in the list - make your best educated guess based on the available information
-10. If information is limited, use the track name, artist, and audio features to make an informed decision
+8. 'mad' should be used for aggressive, angry, or intense tracks
+9. 'mysterious' should be used for dark, atmospheric, or enigmatic tracks
+10. You MUST classify EVERY song in the list - make your best educated guess based on the available information
+11. If information is limited, use the track name, artist, and audio features to make an informed decision
 
 Return your analysis as a JSON object with song IDs as keys and arrays of moods as values:
 ```json
@@ -811,12 +917,30 @@ CRITICAL: Your response MUST include ALL song IDs that were provided in the inpu
         try:
             print("Parsing OpenAI response as JSON...")
             sys.stdout.flush()
+            
+            # Log the raw response for debugging
+            print(f"Raw OpenAI response length: {len(content)} characters")
+            sys.stdout.flush()
+            
+            # Check if response looks like valid JSON
+            if not content.strip():
+                print("Error: Empty response from OpenAI")
+                sys.stdout.flush()
+                return {}
+                
+            if not (content.strip().startswith('{') and content.strip().endswith('}')):
+                print("Error: Response doesn't appear to be valid JSON")
+                print(f"Response starts with: {content[:100]}...")
+                print(f"Response ends with: ...{content[-100:]}")
+                sys.stdout.flush()
+                return {}
+            
             moods_by_track = json.loads(content)
             # Ensure moods_by_track is a dictionary
             if not isinstance(moods_by_track, dict):
                 print(f"Error: Expected dict response but got {type(moods_by_track)}")
                 sys.stdout.flush()
-                moods_by_track = {}
+                return {}
                 
             print(f"Successfully analyzed moods for {len(moods_by_track)} tracks")
             sys.stdout.flush()
@@ -836,21 +960,10 @@ CRITICAL: Your response MUST include ALL song IDs that were provided in the inpu
                 print("=" * 40)
                 sys.stdout.flush()
             
-            # Check for missing tracks - this is just for logging, not for fallback assignment
-            missing_track_ids = set(track_ids) - set(str(id) for id in moods_by_track.keys())
-            if missing_track_ids:
-                print(f"Warning: {len(missing_track_ids)} tracks were not classified by OpenAI")
-                sys.stdout.flush()
-                for track_id in missing_track_ids:
-                    track_obj = next((t for t in tracks if str(t['id']) == track_id), None)
-                    if track_obj:
-                        print(f"Missing classification for: {track_obj['name']} by {track_obj['artist']}")
-                        sys.stdout.flush()
-            
-            # Create a result dictionary with proper string keys and validated moods
+            # Create a result dictionary with proper string keys and validated moods - STRICT MODE
             result = {}
             
-            # First ensure all track IDs in the response are strings
+            # Only accept tracks that have valid mood classifications
             for track_id, moods in moods_by_track.items():
                 # Convert any non-string keys to strings
                 str_id = str(track_id)
@@ -861,15 +974,66 @@ CRITICAL: Your response MUST include ALL song IDs that were provided in the inpu
                     for mood in moods:
                         if isinstance(mood, str) and mood.lower() in mood_list:
                             valid_moods.append(mood.lower())
+                elif isinstance(moods, str) and moods.lower() in mood_list:
+                    # Handle case where a single mood is returned as string instead of array
+                    valid_moods.append(moods.lower())
                 
-                # Store valid moods (or empty list if none were valid)
-                result[str_id] = valid_moods
+                # STRICT MODE: Only accept tracks with valid moods - NO FALLBACKS
+                if valid_moods:
+                    result[str_id] = valid_moods
+                else:
+                    print(f"Warning: Track {str_id} had invalid moods: {moods}")
+                    sys.stdout.flush()
                 
+            print(f"Strict validation result: {len(result)} tracks with valid mood classifications")
+            sys.stdout.flush()
+            
+            # Report any tracks that weren't classified (for retry logic)
+            classified_ids = set(result.keys())
+            expected_ids = set(track_ids)
+            missing_ids = expected_ids - classified_ids
+            
+            if missing_ids:
+                print(f"Missing classifications for {len(missing_ids)} tracks (will retry)")
+                sys.stdout.flush()
+                for track_id in list(missing_ids)[:3]:  # Show first 3
+                    track_obj = next((t for t in tracks if str(t['id']) == track_id), None)
+                    if track_obj:
+                        print(f"  - {track_obj['name']} by {track_obj['artist']}")
+                        sys.stdout.flush()
+            
             return result
             
+        except json.JSONDecodeError as e:
+            print(f"Error parsing JSON response from OpenAI: {e}")
+            print(f"Response content (first 500 chars): {content[:500]}")
+            print(f"Response content (last 500 chars): {content[-500:]}")
+            sys.stdout.flush()
+            
+            # Try to extract partial JSON if possible
+            try:
+                # Look for the main JSON object in the response
+                start_idx = content.find('{')
+                end_idx = content.rfind('}')
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    partial_content = content[start_idx:end_idx+1]
+                    print(f"Attempting to parse partial JSON: {partial_content[:200]}...")
+                    sys.stdout.flush()
+                    partial_result = json.loads(partial_content)
+                    if isinstance(partial_result, dict):
+                        print(f"Successfully parsed partial JSON with {len(partial_result)} tracks")
+                        sys.stdout.flush()
+                        return partial_result
+            except:
+                print("Failed to parse partial JSON as well")
+                sys.stdout.flush()
+                
+            return {}
         except Exception as e:
-            print(f"Error processing ChatGPT response: {e}")
-            import traceback; traceback.print_exc()
+            print(f"Unexpected error processing ChatGPT response: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.stdout.flush()
             return {}
         
     except Exception as e:

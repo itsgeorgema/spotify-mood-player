@@ -6,4 +6,4 @@ requests==2.31.0
 pg8000==1.29.4
 serverless-wsgi==3.0.3
 openai>=1.0.0
-lyricsgenius>=3.0.1 
+lyricsgenius>=3.0.1
