@@ -93,19 +93,19 @@ backend_port_local_dev = int(os.getenv('BACKEND_PORT_LOCAL_DEV', '5001'))
 print(f"--- IS_PRODUCTION: {IS_PRODUCTION}, IS_LAMBDA: {IS_LAMBDA} ---")
 
 if IS_PRODUCTION and not IS_LAMBDA:
-    fly_app_hostname = os.getenv('FLY_APP_HOSTNAME')
-    if fly_app_hostname:
-        app.config['SERVER_NAME'] = fly_app_hostname                                       
-    else:
-        # Fallback if FLY_APP_HOSTNAME isn't set
-        app.config['SERVER_NAME'] = "https://mood-player-backend.fly.dev"
+    explicit_server_name = os.getenv('SERVER_NAME')  # Generic override
+
+    if explicit_server_name:
+        app.config['SERVER_NAME'] = explicit_server_name
+    # If neither env variable is set we simply **do not** set SERVER_NAME – Flask will infer it from the
+    # incoming request host and cookies will still work when domain is left unset.
 
     app.config.update(
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='None', # 'None' for cross-origin requests
+        SESSION_COOKIE_SAMESITE='None',  # For cross-origin requests
         SESSION_COOKIE_PATH='/',
-        SESSION_COOKIE_DOMAIN=None,  # Let Flask set this automatically
+        SESSION_COOKIE_DOMAIN=None,      # Let Flask determine domain automatically
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
     )
