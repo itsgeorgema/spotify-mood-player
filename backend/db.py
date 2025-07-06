@@ -1,145 +1,222 @@
 from dotenv import load_dotenv
 import os
-import psycopg2
-from psycopg2 import sql
+import pg8000.native
+from contextlib import contextmanager
 import time
 import logging
+import json
+import urllib.parse
 
 logger = logging.getLogger(__name__)
 
 # Load .env from the root directory
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
-# Global connection configuration
-db_config = {
-    'initialized': False,
-    'db_url': None,
-    'connection_params': {
-        'connect_timeout': 10,
-        'application_name': 'spotify-mood-player',
-        'keepalives': 1,
-        'keepalives_idle': 30,
-        'keepalives_interval': 10,
-        'keepalives_count': 5
-    },
-    'connection_components': {}
-}
+# Global connection pool
+connection_pool = None
 
 def init_database_config():
-    """Initialize database connection parameters (but don't create connections yet)"""
-    global db_config
+    """Initialize the database configuration."""
+    global connection_pool
+    
     try:
-        # Try Supabase URL first (preferred for serverless)
+        # Get database URL from environment
         db_url = os.getenv('SUPABASE_DATABASE_URL')
         
-        # If Supabase URL is not available, try to build connection from individual params
         if not db_url:
-            logger.info("SUPABASE_DATABASE_URL not found, trying local PostgreSQL connection parameters")
-            host = os.getenv('POSTGRES_HOST', 'postgres')  # Default to service name in docker-compose
-            user = os.getenv('POSTGRES_USER', 'postgres')
-            password = os.getenv('POSTGRES_PASSWORD', 'postgres')
-            db_name = os.getenv('POSTGRES_DB', 'postgres')
-            port = os.getenv('POSTGRES_PORT', '5432')
+            logger.warning("No database URL found in environment variables")
+            return False
             
-            # Instead of using string formatting, store individual components
-            db_config['connection_components'] = {
-                'host': host,
-                'user': user,
-                'password': password,
-                'dbname': db_name,
-                'port': port
-            }
-            # Set db_url to None to use components instead
-            db_url = None
+        # Parse the URL to extract connection parameters
+        parsed_url = urllib.parse.urlparse(db_url)
+        dbname = parsed_url.path[1:]  # Remove leading slash
+        username = parsed_url.username
+        password = parsed_url.password
+        hostname = parsed_url.hostname
+        port = parsed_url.port or 5432
         
-        # Store connection info
-        db_config['db_url'] = db_url
+        # Create a simple connection test function
+        def get_connection():
+            try:
+                return pg8000.native.Connection(
+                    user=username,
+                    password=password,
+                    host=hostname,
+                    port=port,
+                    database=dbname
+                )
+            except Exception as e:
+                logger.error(f"Error creating connection: {str(e)}")
+                return None
         
-        # Add connection parameters from env vars if available
-        db_config['connection_params']['connect_timeout'] = int(os.getenv('DB_CONNECT_TIMEOUT', '10'))
-        
-        # Log connection (hide credentials)
-        if db_url:
-            url_parts = db_url.split('@')
-            if len(url_parts) > 1:
-                auth_part = url_parts[0].split('://')
-                protocol = auth_part[0] if len(auth_part) > 1 else ''
-                masked_url = f"{protocol}://****:****@{url_parts[1]}"
-                logger.info(f"Database configured with: {masked_url}")
-            else:
-                logger.info("Database configuration initialized")
+        # Test the connection
+        conn = get_connection()
+        if conn:
+            conn.close()
+            connection_pool = get_connection  # Store the function as our "pool"
+            logger.info("Database connection tested successfully")
+            return True
         else:
-            logger.info(f"Database configured with components: host={db_config['connection_components'].get('host')}, port={db_config['connection_components'].get('port')}, dbname={db_config['connection_components'].get('dbname')}")
+            logger.error("Failed to create test connection")
+            return False
             
-        db_config['initialized'] = True
-        return True
     except Exception as e:
-        logger.error(f"Error initializing database config: {e}")
-        db_config['initialized'] = False
+        logger.error(f"Error initializing database: {str(e)}")
         return False
 
 def get_db_connection():
-    """Get a fresh database connection for each request (optimized for serverless environment)"""
-    global db_config
+    """Get a database connection from the pool."""
+    global connection_pool
     
-    # Initialize connection parameters if not already done
-    if not db_config['initialized']:
-        init_database_config()
-    
-    if not db_config['initialized'] or not db_config['db_url']:
-        raise Exception("Database not properly configured")
-    
-    # Try to establish a connection with retry logic
-    max_retries = 3
-    retry_delay = 1  # Start with 1 second delay
-    last_error = None
-    
-    for attempt in range(max_retries):
-        try:
-            # Create a new connection with serverless-optimized parameters
-            if db_config['db_url']:
-                # Use connection string if available
-                conn = psycopg2.connect(
-                    db_config['db_url'],
-                    **db_config['connection_params']
-                )
-            else:
-                # Use connection parameters if URL is not available
-                conn = psycopg2.connect(
-                    **db_config['connection_components'],
-                    **db_config['connection_params']
-                )
-            
-            # Set session parameters optimized for serverless/short-lived connections
-            with conn.cursor() as cursor:
-                # Set statement timeout to avoid hanging connections
-                cursor.execute("SET statement_timeout = '30s'")
-                # Test connection is working
-                cursor.execute("SELECT 1")
-            
-            return conn
-            
-        except Exception as e:
-            last_error = e
-            if attempt < max_retries - 1:
-                logger.warning(f"Database connection attempt {attempt + 1} failed: {e}, retrying in {retry_delay}s")
-                time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 5)  # Exponential backoff, max 5 sec
-    
-    # If we get here, all attempts failed
-    logger.error(f"Failed to connect to database after {max_retries} attempts: {last_error}")
-    if last_error:
-        raise last_error
-    else:
-        raise Exception("Failed to establish database connection")
+    if connection_pool is None:
+        logger.error("Connection pool is not initialized")
+        return None
+        
+    try:
+        # connection_pool is actually a function in this case
+        connection = connection_pool()
+        return connection
+    except Exception as e:
+        logger.error(f"Error getting database connection: {str(e)}")
+        return None
 
-def close_db_connection(conn):
-    """Close a database connection safely"""
-    if conn:
+def close_db_connection(connection):
+    """Close a database connection."""
+    if connection is not None:
         try:
-            conn.close()
+            connection.close()
         except Exception as e:
-            logger.warning(f"Error closing database connection: {e}")
+            logger.error(f"Error closing connection: {str(e)}")
+
+@contextmanager
+def get_db_cursor():
+    """Context manager for database cursor."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if conn:
+            yield conn  # With pg8000.native, the connection is the cursor
+            conn.run("COMMIT")  # Use explicit SQL command instead of conn.commit()
+        else:
+            yield None
+    except Exception as e:
+        logger.error(f"Database error: {str(e)}")
+        if conn:
+            conn.run("ROLLBACK")  # Use explicit SQL command instead of conn.rollback()
+        yield None
+    finally:
+        if conn:
+            close_db_connection(conn)
+
+def get_or_create_user(user_id):
+    """Get or create a user in the database."""
+    with get_db_cursor() as conn:
+        if conn is None:
+            return None
+            
+        # Check if user exists
+        try:
+            result = conn.run("SELECT id FROM users WHERE spotify_id = :spotify_id", spotify_id=user_id)
+            if result:
+                return result[0][0]
+                
+            # Create new user
+            result = conn.run(
+                "INSERT INTO users (spotify_id) VALUES (:spotify_id) RETURNING id",
+                spotify_id=user_id
+            )
+            return result[0][0] if result else None
+        except Exception as e:
+            logger.error(f"Error in get_or_create_user: {str(e)}")
+            return None
+
+def get_tracks_by_mood(user_id, mood, limit=20):
+    """Get tracks for a user by mood."""
+    with get_db_cursor() as conn:
+        if conn is None:
+            return []
+            
+        try:
+            result = conn.run(
+                """
+                SELECT track_uris FROM user_mood_tracks 
+                WHERE user_spotify_id = :user_id AND mood = :mood
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                user_id=user_id, 
+                mood=mood
+            )
+            
+            if result and result[0][0]:
+                return result[0][0]
+            return []
+        except Exception as e:
+            logger.error(f"Error in get_tracks_by_mood: {str(e)}")
+            return []
+
+def delete_tracks_for_user(user_id):
+    """Delete all tracks for a user."""
+    with get_db_cursor() as conn:
+        if conn is None:
+            return False
+            
+        try:
+            conn.run(
+                "DELETE FROM user_mood_tracks WHERE user_spotify_id = :user_id",
+                user_id=user_id
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error in delete_tracks_for_user: {str(e)}")
+            return False
+
+def insert_tracks(user_id, tracks):
+    """Insert analyzed tracks for a user."""
+    if not tracks or not user_id:
+        return False
+        
+    with get_db_cursor() as conn:
+        if conn is None:
+            return False
+            
+        try:
+            # Create mood buckets
+            mood_uris = {}
+            
+            # Process tracks and organize by mood
+            for track in tracks:
+                if not track.get('moods'):
+                    continue
+                    
+                for mood in track.get('moods', []):
+                    if mood not in mood_uris:
+                        mood_uris[mood] = []
+                        
+                    if track.get('uri'):
+                        mood_uris[mood].append(track['uri'])
+            
+            # Insert each mood's track URIs
+            for mood, uris in mood_uris.items():
+                if not uris:
+                    continue
+                    
+                # Only insert if we have URIs for this mood
+                conn.run(
+                    """
+                    INSERT INTO user_mood_tracks 
+                    (user_spotify_id, mood, track_uris, created_at)
+                    VALUES (:user_id, :mood, :track_uris, NOW())
+                    """,
+                    user_id=user_id,
+                    mood=mood,
+                    track_uris=uris
+                )
+                
+            return True
+        except Exception as e:
+            logger.error(f"Error in insert_tracks: {str(e)}")
+            return False
 
 def wait_for_db(max_retries=30, retry_interval=2):
     """Wait for database to be ready with retries."""
@@ -147,7 +224,7 @@ def wait_for_db(max_retries=30, retry_interval=2):
     while retries < max_retries:
         try:
             # Initialize config first if needed
-            if not db_config['initialized']:
+            if not connection_pool:
                 init_database_config()
                 
             conn = get_db_connection()
@@ -160,120 +237,4 @@ def wait_for_db(max_retries=30, retry_interval=2):
             if retries < max_retries:
                 time.sleep(retry_interval)
     logger.error("Failed to connect to database after maximum retries")
-    return False
-
-def get_or_create_user(spotify_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM users WHERE spotify_id = %s", (spotify_id,))
-            result = cursor.fetchone()
-            if result:
-                user_id = result[0]
-            else:
-                cursor.execute(
-                    "INSERT INTO users (spotify_id) VALUES (%s) RETURNING id", 
-                    (spotify_id,)
-                )
-                inserted = cursor.fetchone()
-                if not inserted:
-                    raise Exception("Failed to insert user")
-                user_id = inserted[0]
-                conn.commit()
-        return user_id
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Error in get_or_create_user: {e}")
-        raise
-    finally:
-        close_db_connection(conn)
-
-def insert_tracks(user_id, tracks):
-    """Insert or update tracks with their moods in the database.
-    
-    Args:
-        user_id (int): The database user ID
-        tracks (list): List of track dictionaries, each with 'uri' and 'moods' fields
-    """
-    if not tracks:
-        print("No tracks provided to insert_tracks")
-        return
-        
-    conn = None
-    try:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            # Delete existing tracks for this user
-            cursor.execute("DELETE FROM tracks WHERE user_id = %s", (user_id,))
-            
-            # Prepare data for batch insert
-            batch_values = []
-            for track in tracks:
-                # Get moods from the track data
-                moods = track.get('moods', [])
-                if not moods:
-                    # Try legacy 'mood' field if 'moods' not found
-                    legacy_mood = track.get('mood')
-                    if legacy_mood:
-                        moods = [legacy_mood]
-                        
-                # Skip tracks with no mood data
-                if not moods:
-                    continue
-                    
-                uri = track.get('uri')
-                if not uri:
-                    continue
-                    
-                # Insert one row per mood for this track
-                for mood in moods:
-                    if mood and isinstance(mood, str):
-                        batch_values.append((user_id, uri.strip(), mood.lower().strip()))
-            
-            # Execute batch insert if we have values
-            if batch_values:
-                args = ','.join(cursor.mogrify("(%s,%s,%s)", i).decode('utf-8') for i in batch_values)
-                query = "INSERT INTO tracks (user_id, uri, mood) VALUES " + args
-                cursor.execute(query)
-                
-            # Commit the transaction
-            conn.commit()
-            print(f"Successfully stored {len(batch_values)} track-mood pairs for user {user_id}")
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        print(f"Error inserting tracks: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if conn:
-            close_db_connection(conn)
-
-def get_tracks_by_mood(user_id, mood, limit=20):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT uri FROM tracks WHERE user_id = %s AND mood = %s LIMIT %s",
-                (user_id, mood, limit)
-            )
-            rows = cursor.fetchall() or []
-            uris = [row[0] for row in rows]
-        return uris
-    except Exception as e:
-        logger.error(f"Error in get_tracks_by_mood: {e}")
-        return []
-    finally:
-        close_db_connection(conn)
-
-def delete_tracks_for_user(user_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM tracks WHERE user_id = %s", (user_id,))
-            conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Error in delete_tracks_for_user: {e}")
-    finally:
-        close_db_connection(conn) 
+    return False 

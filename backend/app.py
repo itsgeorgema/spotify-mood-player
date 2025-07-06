@@ -6,13 +6,13 @@ from datetime import timedelta
 from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 import time
-from lyrics_service import analyze_user_library, get_tracks_for_mood
 import spotify_service
 from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection, init_database_config, close_db_connection
 import logging
 import random
 from migrations import run_migrations
 import json
+from lyrics_service import analyze_user_library, get_tracks_for_mood
 
 # Set up logging
 logging.basicConfig(
@@ -78,9 +78,10 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
 # --- Environment-Specific Configuration ---
 IS_PRODUCTION = os.getenv('FLASK_ENV') == 'production'
+IS_LAMBDA = os.getenv('AWS_LAMBDA_FUNCTION_NAME') is not None
 backend_port_local_dev = os.getenv('PORT', '5001')
 
-if IS_PRODUCTION:
+if IS_PRODUCTION and not IS_LAMBDA:
     fly_app_hostname = os.getenv('FLY_APP_HOSTNAME')
     if fly_app_hostname:
         app.config['SERVER_NAME'] = fly_app_hostname                                       
@@ -96,8 +97,8 @@ if IS_PRODUCTION:
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
         SESSION_REFRESH_EACH_REQUEST=True
     )
-    print(f"--- Flask SERVER_NAME (Production): {app.config['SERVER_NAME']} ---")
-else: # Local development
+    print(f"--- Flask SERVER_NAME (Production): {app.config.get('SERVER_NAME', 'Not Set')} ---")
+elif not IS_LAMBDA: # Local development
     app.config['SERVER_NAME'] = f"127.0.0.1:{backend_port_local_dev}"
     app.config.update(
         SESSION_COOKIE_SECURE=False,  # Set True if tunneling
@@ -108,6 +109,17 @@ else: # Local development
         SESSION_REFRESH_EACH_REQUEST=True
     )
     print(f"--- Flask SERVER_NAME (Development): {app.config['SERVER_NAME']} ---")
+else: # Lambda deployment
+    # Don't set SERVER_NAME for Lambda, let API Gateway handle it
+    app.config.update(
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='None', # 'None' for cross-origin requests
+        SESSION_COOKIE_PATH='/',
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
+        SESSION_REFRESH_EACH_REQUEST=True
+    )
+    print("--- Running in AWS Lambda, no SERVER_NAME set ---")
 
 print(f"--- Flask Session Cookie SAMESITE: {app.config['SESSION_COOKIE_SAMESITE']} ---")
 print(f"--- Flask Session Cookie SECURE: {app.config['SESSION_COOKIE_SECURE']} ---")
@@ -248,97 +260,44 @@ def analyze_library_route():
             return jsonify({"error": "Could not fetch user profile from Spotify."}), 401
         spotify_id = user_profile['id']
         
-        # Analyze user's library (prioritize session storage for serverless)
+        # Import analyze_user_library only when needed
         try:
             print("--- Starting library analysis, this may take a minute... ---")
             sys.stdout.flush()
             analyzed_tracks, mood_uris = analyze_user_library(sp, session)
             
-            # Verify that ALL tracks have been analyzed and assigned moods
-            if not analyzed_tracks:
-                print("--- /api/analyze: No tracks returned from analysis ---")
-                sys.stdout.flush()
-                return jsonify({
-                    "error": "Analysis completed but no tracks were found. Check logs for details.",
-                }), 404
+            if not analyzed_tracks or not mood_uris:
+                return jsonify({"error": "No tracks could be analyzed"}), 500
                 
-            # Check if all tracks have moods assigned
-            tracks_without_moods = [t for t in analyzed_tracks if not t.get('moods') or len(t.get('moods', [])) == 0]
-            if tracks_without_moods:
-                print(f"--- Warning: {len(tracks_without_moods)} tracks have no moods assigned ---")
-                sys.stdout.flush()
-                
-            # Verify we have mood data
-            if not mood_uris or len(mood_uris) == 0:
-                print("--- /api/analyze: No moods returned from analysis ---")
-                sys.stdout.flush()
-                return jsonify({
-                    "error": "Analysis completed but no moods were assigned. Check logs for details.",
-                    "tracks_analyzed": len(analyzed_tracks)
-                }), 404
-                
-            print(f"--- Analysis completed successfully with {len(analyzed_tracks)} tracks and {len(mood_uris)} moods ---")
+            # Store in database
+            print(f"--- Storing {len(analyzed_tracks)} tracks in database ---")
             sys.stdout.flush()
+            success = insert_tracks(spotify_id, analyzed_tracks)
+            
+            if not success:
+                return jsonify({"error": "Failed to store tracks in database"}), 500
                 
-        except Exception as e:
-            print(f"--- /api/analyze: Error during library analysis: {str(e)} ---")
+            # Store in session too (useful for serverless context where we might not have DB access)
+            session['mood_uris'] = mood_uris
+            session.modified = True
+            
+            print("--- Analysis complete ---")
             sys.stdout.flush()
-            traceback.print_exc()
-            return jsonify({"error": f"Analysis failed: {str(e)}"}), 500
-
-        # Store results in session - critical for serverless where DB may not be available
-        session['mood_uris'] = mood_uris
-        session['last_analysis'] = time.time()
-        session.modified = True
-        
-        # Try to store in database if option not explicitly disabled
-        if not request.args.get('skip_db'):
-            try:
-                # Each database operation uses its own fresh connection in serverless
-                user_id = get_or_create_user(spotify_id)
-                delete_tracks_for_user(user_id)
-                insert_tracks(user_id, analyzed_tracks)
-                print(f"--- Stored {len(analyzed_tracks)} tracks in database for user {user_id} ---")
-                sys.stdout.flush()
-            except Exception as e:
-                logger.error(f"Error saving to database in /api/analyze: {e}")
-                print(f"--- Failed to store tracks in database: {e}. Analysis only available in current session. ---")
-                sys.stdout.flush()
-                
-        # Collect all unique moods found in the analysis
-        moods = set(mood for track in analyzed_tracks for mood in track.get('moods', []))
-        
-        # Calculate mood distribution for the response
-        mood_distribution = {}
-        if mood_uris:
-            for mood in moods:
-                if mood in mood_uris:
-                    mood_distribution[mood] = len(mood_uris[mood])
-        
-        print(f"--- Analysis complete: {len(analyzed_tracks)} tracks analyzed, {len(moods)} unique moods found ---")
-        print(f"--- Final mood distribution: {json.dumps(mood_distribution, indent=2)} ---")
-        sys.stdout.flush()
-        
-        # Log detailed breakdown for immediate visibility
-        if mood_uris:
-            print("\n--- DETAILED MOOD BREAKDOWN (API) ---")
+            return jsonify({
+                "success": True,
+                "tracks_analyzed": len(analyzed_tracks),
+                "moods": list(mood_uris.keys()) if mood_uris else []
+            })
+        except ImportError as e:
+            print(f"--- Error importing lyrics_service: {e} ---")
             sys.stdout.flush()
-            for mood, uris in mood_uris.items():
-                print(f"{mood}: {len(uris)} tracks")
-                sys.stdout.flush()
-            print("--- END MOOD BREAKDOWN ---")
-            sys.stdout.flush()
-        
-        return jsonify({
-            "message": "Successfully analyzed your music library",
-            "available_moods": list(moods),
-            "tracks_analyzed": len(analyzed_tracks),
-            "mood_distribution": mood_distribution
-        }), 200
+            return jsonify({"error": f"Could not load lyrics analysis module: {str(e)}"}), 500
+            
     except Exception as e:
-        logger.error(f"Error in analyze_library_route: {e}")
+        print(f"--- Error in /api/analyze: {e} ---")
         traceback.print_exc()
-        return jsonify({"error": f"Analysis failed: {str(e)}"}), 500
+        sys.stdout.flush()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/mood-tracks', methods=['GET'])
 def get_mood_tracks_route():
@@ -360,67 +319,68 @@ def get_mood_tracks_route():
     
     # First check if we have tracks in session (prioritize session for serverless context)
     session_mood_uris = session.get('mood_uris', {})
-    if session_mood_uris and mood in session_mood_uris and session_mood_uris[mood]:
-        # Use cached tracks from session
-        track_uris = session_mood_uris[mood]
-        if track_uris:
-            # Shuffle the URIs for variety
-            random_uris = random.sample(track_uris, min(len(track_uris), 75))
-            logger.info(f"Using {len(random_uris)} tracks for mood '{mood}' from session cache")
-            return jsonify({
-                "track_uris": random_uris,
-                "count": len(random_uris),
-                "source": "session"
-            }), 200
+    if session_mood_uris and mood in session_mood_uris and len(session_mood_uris[mood]) > 0:
+        # Return random selection if we have more than enough tracks
+        tracks = session_mood_uris[mood]
+        if len(tracks) > 20:
+            tracks = random.sample(tracks, 20)
+            
+        print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from session ---")
+        sys.stdout.flush()
+        return jsonify({"tracks": tracks})
     
-    # If no tracks in session, try database (serverless approach - new connection each time)
+    # If not in session, try database
     try:
-        # Get the user ID from Spotify profile
         user_profile = sp.current_user()
-        if not user_profile:
-            logger.error("Could not fetch user profile from Spotify")
-            return jsonify({"error": "Could not fetch user profile from Spotify."}), 401
+        if user_profile and 'id' in user_profile:
+            user_id = user_profile['id']
+            tracks = get_tracks_by_mood(user_id, mood)
             
-        spotify_id = user_profile['id']
-        
-        try:
-            # Each database operation gets its own fresh connection
-            user_id = get_or_create_user(spotify_id)
-            
-            # Get tracks for the requested mood from database
-            track_uris = get_tracks_by_mood(user_id, mood, limit=75)  # Increased limit for better variety
-            
-            if track_uris:
-                # Shuffle the URIs for variety
-                random.shuffle(track_uris)
-                
-                # Store in session for future requests (avoiding DB calls)
-                if mood not in session_mood_uris:
-                    session_mood_uris[mood] = track_uris
-                    session['mood_uris'] = session_mood_uris
-                    session.modified = True
-                
-                logger.info(f"Found {len(track_uris)} tracks for mood: {mood} for user {user_id}")
-                return jsonify({
-                    "track_uris": track_uris,
-                    "count": len(track_uris),
-                    "source": "database"
-                }), 200
-        except Exception as e:
-            logger.error(f"Database error retrieving mood tracks: {e}")
-            print(f"--- Database error in mood-tracks: {e} ---")
-            # Fall through to the "no tracks found" response
-        
-        # If we got here, no tracks were found in session or database
-        logger.info(f"No tracks found for mood: {mood} for user {spotify_id}")
-        return jsonify({
-            "track_uris": [],
-            "message": f"No {mood} tracks found in your library. Try running the mood analysis first."
-        }), 200
-        
+            if tracks and len(tracks) > 0:
+                print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from database ---")
+                sys.stdout.flush()
+                return jsonify({"tracks": tracks})
+        else:
+            print("--- User profile not available ---")
+            sys.stdout.flush()
     except Exception as e:
-        logger.error(f"Error retrieving mood tracks: {str(e)}")
-        return jsonify({"error": f"Could not retrieve tracks: {str(e)}"}), 500
+        logger.error(f"Database error in get_mood_tracks_route: {e}")
+        # Continue to fallback
+    
+    # If we still don't have tracks, try the fallback mood analysis
+    try:
+        print(f"--- No tracks found for mood '{mood}', attempting fallback mood analysis ---")
+        sys.stdout.flush()
+        
+        # Get the user's library again
+        try:
+            analyzed_tracks, mood_uris = analyze_user_library(sp, session)
+            
+            # Store the results in session for future use
+            if mood_uris:
+                session['mood_uris'] = mood_uris
+                session.modified = True
+                
+            # Get tracks for the requested mood
+            if mood_uris and mood in mood_uris:
+                tracks = mood_uris[mood]
+                if len(tracks) > 20:
+                    tracks = random.sample(tracks, 20)
+                    
+                print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from fallback analysis ---")
+                sys.stdout.flush()
+                return jsonify({"tracks": tracks})
+        except Exception as e:
+            logger.error(f"Error in fallback analysis: {e}")
+            traceback.print_exc()
+    except ImportError as e:
+        print(f"--- Error importing lyrics_service: {e} ---")
+        sys.stdout.flush()
+        
+    # If we still don't have tracks, return empty list
+    print(f"--- No tracks found for mood '{mood}' ---")
+    sys.stdout.flush()
+    return jsonify({"tracks": []})
 
 @app.route('/api/play', methods=['POST'])
 def play_tracks_route():
@@ -539,9 +499,8 @@ def health_check():
         try:
             conn = get_db_connection()
             if conn:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT 1")
-                    cursor.fetchone()
+                # With pg8000, the connection itself is the cursor
+                conn.run("SELECT 1")
                 close_db_connection(conn)
                 db_status = "connected"
         except Exception as e:

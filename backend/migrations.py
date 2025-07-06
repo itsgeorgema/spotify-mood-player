@@ -1,54 +1,59 @@
+import os
 import logging
 import sys
 import traceback
+from db import get_db_connection, close_db_connection
 
 logger = logging.getLogger(__name__)
 
 def run_migrations():
-    # Import here to avoid circular imports
-    from db import get_db_connection, close_db_connection
-    
+    """Run database migrations to set up tables"""
     conn = None
     try:
         conn = get_db_connection()
-        with conn.cursor() as cursor:
-            # Add your migration SQL here - PostgreSQL syntax
-            migrations = [
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    spotify_id VARCHAR(255) UNIQUE NOT NULL
-                )
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS tracks (
-                    id SERIAL PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    uri VARCHAR(255) NOT NULL,
-                    mood VARCHAR(50) NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                    CONSTRAINT unique_track_mood UNIQUE (user_id, uri, mood)
-                )
-                """
-            ]
+        if not conn:
+            logger.error("Could not get database connection for migrations")
+            return False
             
-            for migration in migrations:
-                cursor.execute(migration)
-            
-            conn.commit()
-            logger.info("Migrations completed successfully")
-            print("Migrations completed successfully")
-            sys.stdout.flush()
+        # Create users table if it doesn't exist
+        conn.run("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                spotify_id VARCHAR(255) NOT NULL UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create user_mood_tracks table if it doesn't exist
+        conn.run("""
+            CREATE TABLE IF NOT EXISTS user_mood_tracks (
+                id SERIAL PRIMARY KEY,
+                user_spotify_id VARCHAR(255) NOT NULL,
+                mood VARCHAR(100) NOT NULL,
+                track_uris TEXT[] NOT NULL,
+                created_at TIMESTAMP NOT NULL
+            )
+        """)
+        
+        # Add index on user_spotify_id and mood if it doesn't exist
+        try:
+            conn.run("""
+                CREATE INDEX IF NOT EXISTS idx_user_mood_tracks_user_mood ON user_mood_tracks (user_spotify_id, mood)
+            """)
+        except Exception as e:
+            # Some PostgreSQL versions don't support IF NOT EXISTS for indices
+            # So we'll check if the error is about the index already existing
+            if "already exists" not in str(e):
+                raise
+                
+        logger.info("Database migrations completed successfully")
+        return True
+        
     except Exception as e:
-        if conn:
-            conn.rollback()
-        logger.error(f"Migration failed: {str(e)}")
-        print(f"Migration failed: {str(e)}")
-        traceback.print_exc()
-        sys.stdout.flush()
-        raise
+        logger.error(f"Error running migrations: {e}")
+        return False
     finally:
-        if conn is not None:
+        if conn:
             close_db_connection(conn)
 
 if __name__ == "__main__":

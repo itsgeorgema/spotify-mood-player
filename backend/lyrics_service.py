@@ -2,11 +2,8 @@ import os
 from lyricsgenius import Genius
 import random
 import requests
-import librosa
-import numpy as np
 import tempfile
 from urllib.parse import quote
-from pydub import AudioSegment
 import csv
 import pathlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,6 +14,29 @@ import time
 import urllib3
 from urllib3.util.retry import Retry
 import sys  # Add sys for flushing output
+
+# Heavy dependencies - imported lazily when needed
+librosa = None
+np = None
+AudioSegment = None
+
+def _import_heavy_dependencies():
+    """Lazy import heavy dependencies only when needed"""
+    global librosa, np, AudioSegment
+    if librosa is None:
+        try:
+            import librosa as _librosa
+            import numpy as _np
+            from pydub import AudioSegment as _AudioSegment
+            librosa = _librosa
+            np = _np
+            AudioSegment = _AudioSegment
+            print("Successfully imported heavy dependencies (librosa, numpy, pydub)")
+        except ImportError as e:
+            print(f"Failed to import heavy dependencies: {e}")
+            print("Audio analysis features will be disabled")
+            return False
+    return True
 
 # Configure the urllib3 connection pool globally with much larger limits
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -158,6 +178,13 @@ def create_genius_client():
 
 def download_and_convert_preview(preview_url):
     """Download m4a preview and convert to wav for librosa analysis. Returns wav path or None."""
+    if not _import_heavy_dependencies():
+        print("Audio conversion not available - heavy dependencies not loaded")
+        return None
+        
+    # At this point, AudioSegment is guaranteed to be imported
+    assert AudioSegment is not None, "AudioSegment should be imported by now"
+        
     m4a_path = None
     try:
         # Download m4a
@@ -274,6 +301,13 @@ def extract_audio_features(preview_url, track_name):
         'contrast': 0, 'chroma': 0, 'flatness': 0, 'rolloff': 0,
         'mfcc1': 0, 'mfcc2': 0, 'mfcc3': 0, 'mfcc4': 0, 'mfcc5': 0
     }
+    
+    if not _import_heavy_dependencies():
+        print("Audio analysis not available - heavy dependencies not loaded")
+        return audio_features
+    
+    # At this point, librosa and np are guaranteed to be imported
+    assert librosa is not None and np is not None, "librosa and np should be imported by now"
     
     wav_path = None
     y = None
@@ -568,12 +602,15 @@ def analyze_user_library(sp, session=None):
 
 def convert_numpy_to_python(obj):
     """Convert NumPy datatypes to Python native types for JSON serialization"""
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, np.floating):
-        return float(obj)
+    # Only do numpy conversion if numpy is available
+    if np is not None:
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+    
     if isinstance(obj, dict):
         return {key: convert_numpy_to_python(value) for key, value in obj.items()}
     if isinstance(obj, list):

@@ -1,0 +1,2 @@
+apt-get update -y
+apt-get install -y libpq-dev build-essential libsndfile1-dev ffmpeg libavcodec-extra libffi-dev libssl-dev cmake libopenblas-dev liblapack-dev gfortran libblas-dev libatlas-base-dev pkg-config 

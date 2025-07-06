@@ -1,47 +1,129 @@
-service: spotify-mood-player
+service: spotify-mood-player-${env:DEPLOY_TIMESTAMP, '1'}
 
 provider:
   name: aws
-  runtime: python3.13
+  runtime: python3.12
   stage: ${opt:stage, 'prod'}
   region: ${opt:region, 'us-east-2'}
-  handler: wsgi_handler.handler
   environment:
     FLASK_ENV: production
-    FLASK_SECRET_KEY: ${env:FLASK_SECRET_KEY}
-    SPOTIFY_CLIENT_ID: ${env:SPOTIFY_CLIENT_ID}
-    SPOTIFY_CLIENT_SECRET: ${env:SPOTIFY_CLIENT_SECRET}
-    SPOTIPY_REDIRECT_URI: ${env:SPOTIPY_REDIRECT_URI}
-    GENIUS_ACCESS_TOKEN: ${env:GENIUS_ACCESS_TOKEN}
-    OPENAI_API_KEY: ${env:OPENAI_API_KEY}
-    POSTGRES_USER: ${env:POSTGRES_USER}
-    POSTGRES_PASSWORD: ${env:POSTGRES_PASSWORD}
-    POSTGRES_DB: ${env:POSTGRES_DB}
-    POSTGRES_HOST: ${env:POSTGRES_HOST}
-    FRONTEND_URL: ${env:FRONTEND_URL}
-    SUPABASE_DATABASE_URL: ${env:SUPABASE_DATABASE_URL}
-    AWS_ACCOUNT_ID: ${env:AWS_ACCOUNT_ID}
+    FLASK_DEBUG: true
+    LOG_LEVEL: DEBUG
+    FLASK_SECRET_KEY: ${ssm:/spotify-mood-player/prod/FLASK_SECRET_KEY}
+    SPOTIPY_CLIENT_ID: ${ssm:/spotify-mood-player/prod/SPOTIPY_CLIENT_ID}
+    SPOTIPY_CLIENT_SECRET: ${ssm:/spotify-mood-player/prod/SPOTIPY_CLIENT_SECRET}
+    SPOTIPY_REDIRECT_URI: ${ssm:/spotify-mood-player/prod/SPOTIPY_REDIRECT_URI}
+    GENIUS_ACCESS_TOKEN: ${ssm:/spotify-mood-player/prod/GENIUS_ACCESS_TOKEN}
+    OPENAI_API_KEY: ${ssm:/spotify-mood-player/prod/OPENAI_API_KEY}
+    FRONTEND_URL: ${ssm:/spotify-mood-player/prod/FRONTEND_URL}
+    SUPABASE_DATABASE_URL: ${ssm:/spotify-mood-player/prod/SUPABASE_DATABASE_URL}
+  timeout: 29 # Match API Gateway max timeout
+  memorySize: 1024 # 1GB of memory
+  apiGateway:
+    minimumCompressionSize: 1024
+    shouldStartNameWithService: true
+  logs:
+    restApi: true # Enable API Gateway logs
 
 plugins:
   - serverless-python-requirements
-  - serverless-wsgi
+  - serverless-plugin-include-dependencies
 
 custom:
-  wsgi:
-    app: app.app
-    packRequirements: false
   pythonRequirements:
-    dockerizePip: non-linux
+    dockerizePip: true
+    dockerRunArgs: ["--platform", "linux/amd64"]
+    dockerExtraArgs: ["--platform", "linux/amd64"]
+    useDownloadCache: false
+    useStaticCache: false
+    pip:
+      command: pip3
     slim: true
-    usePoetry: false
+    slimPatterns:
+      - "**/*.pyc"
+      - "**/__pycache__/**"
+      - "**/*.dist-info/**"
+      - "**/*.egg-info/**"
+      - "**/tests/**"
+      - "**/test/**"
+      - "**/*.md"
+      - "**/*.txt"
+      - "**/*.rst"
+      - "**/docs/**"
+      - "**/examples/**"
+      - "**/benchmarks/**"
+    strip: true
+    fileName: requirements-app.txt
+    noDeploy:
+      - numpy
+      - scipy
+      - librosa
+      - pydub
+      - soundfile
+      - audioread
+      - numba
+      - llvmlite
+      - pytest
+      - matplotlib
+      - pandas
+
+package:
+  individually: false
+  patterns:
+    - "!.venv/**"
+    - "!venv/**"
+    - "!__pycache__/**"
+    - "!.pytest_cache/**"
+    - "!tests/**"
+    - "!.git/**"
+    - "!node_modules/**"
+    - "!*.pyc"
+    - "!**/*.pyc"
+    - "!.DS_Store"
+    - "!.cache/**"
+    - "!.serverless/**"
+    - "!.package/**"
+    - "!requirements.txt"
+    - "!requirements-layer.txt"
+    - "!apt-commands.txt"
+    - "!layer.yml"
+    - "!training_data.csv"
+    - "!deploy.sh"
+    - "!Dockerfile"
+    - "!gunicorn.conf.py"
+    - "!postgres-init.sql"
 
 functions:
   app:
-    handler: wsgi_handler.handler
+    handler: lambda_function.lambda_handler
+    timeout: 29 # Match API Gateway max timeout
+    memorySize: 1024 # 1GB of memory
+    layers:
+      - ${cf:spotify-mood-player-layer-${env:DEPLOY_TIMESTAMP, '1'}-${self:provider.stage}.SpotifyMoodPlayerLayerExport}
     events:
       - http:
           path: /
           method: ANY
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+            allowCredentials: true
       - http:
           path: /{proxy+}
-          method: ANY 
+          method: ANY
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+            allowCredentials: true 

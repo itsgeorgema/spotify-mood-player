@@ -1,0 +1,51 @@
+service: spotify-mood-player-layer-${env:DEPLOY_TIMESTAMP, '1'}
+
+provider:
+  name: aws
+  runtime: python3.12
+  stage: ${opt:stage, 'prod'}
+  region: ${opt:region, 'us-east-2'}
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+    dockerRunArgs: ["--platform", "linux/amd64"]
+    dockerExtraArgs: ["--platform", "linux/amd64"]
+    slim: true
+    slimPatterns:
+      - "**/*.pyc"
+      - "**/__pycache__/**"
+      - "**/*.dist-info/**"
+      - "**/*.egg-info/**"
+      - "**/tests/**"
+      - "**/test/**"
+      - "**/*.md"
+      - "**/*.txt"
+      - "**/*.rst"
+      - "**/docs/**"
+      - "**/examples/**"
+      - "**/benchmarks/**"
+    strip: true
+    aptCommandsFile: 'apt-commands.txt'
+    layer:
+      name: spotify-mood-player-layer-${env:DEPLOY_TIMESTAMP, '1'}-${self:provider.stage}
+      description: "Heavy dependencies for Spotify Mood Player"
+      compatibleRuntimes:
+        - python3.12
+      compatibleArchitectures:
+        - x86_64
+
+package:
+  patterns:
+    - "!**/*"
+
+resources:
+  Outputs:
+    SpotifyMoodPlayerLayerExport:
+      Value:
+        Ref: PythonRequirementsLambdaLayer
+      Export:
+        Name: spotify-mood-player-layer-${env:DEPLOY_TIMESTAMP, '1'}-${self:provider.stage} 

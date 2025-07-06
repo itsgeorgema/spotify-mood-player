@@ -41,11 +41,13 @@ Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 
 ## Tech Stack
 
-- Frontend: React, TypeScript, Vite, HTML, CSS, Vercel
-- Backend: Flask, Python, AWS Lambda
-- Database: PostgreSQL, Supabase
-- APIs and Libraries: OpenAI API, iTunes Search API, Genius API, Spotify API, Librosa
-- Build/Dev Tools: Vite, Node.js, npm, Cloudflare Tunnel
+- **Frontend**: React, TypeScript, Vite, HTML, CSS, Vercel
+- **Backend**: Flask, Python, AWS Lambda (serverless)
+- **Database**: PostgreSQL, Supabase
+- **APIs and Libraries**: OpenAI API, iTunes Search API, Genius API, Spotify API, Librosa, NumPy, SciPy, Pydub
+- **AWS Services**: Lambda, API Gateway, Parameter Store, CloudWatch, CloudFormation
+- **Deployment**: Serverless Framework, Docker, AWS CLI
+- **Build/Dev Tools**: Vite, Node.js, npm, Cloudflare Tunnel
 
 ## Setup
 
@@ -69,7 +71,6 @@ FLASK_ENV=development (production when deployed)
 OPENAI_API_KEY=API key from OpenAI
 SUPABASE_DATABASE_URL=get connection to postgres database in supabase
 AWS_REGION=whatever region hosted on
-AWS_ACCOUNT_ID=12 digit ID from dashboard
 ```
 
 #### Frontend (`src/.env`)
@@ -134,6 +135,24 @@ cloudflared tunnel --url http://127.0.0.1:5001
    - Set the `VITE_BACKEND_API_URL` environment variable in your deployed frontend
    - Set the `SPOTIPY_REDIRECT_URI` env variable in your local backend .env
    - Update the redirect URI in your Spotify Developer Dashboard
+
+## AWS Lambda Deployment
+
+The backend is deployed on AWS Lambda using a serverless architecture
+
+### Architecture Overview
+
+The deployment uses a **two-layer approach** to handle the large audio processing dependencies:
+
+1. **Lambda Layer**: Contains heavy dependencies (numpy, scipy, librosa, pydub, etc.)
+2. **Lambda Function**: Lightweight Flask app with essential dependencies only
+
+This approach keeps the function package small while preserving full functionality through lazy loading. Layer and function deployed through shell script.
+
+### Tools
+
+1. **Serverless Framework**
+2. **Docker**: for building Linux-compatible packages
 
 ## Development Notes
 
