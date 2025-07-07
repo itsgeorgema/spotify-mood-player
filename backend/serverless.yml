@@ -130,7 +130,6 @@ package:
     - "!requirements-layer.txt"
     - "!apt-commands.txt"
     - "!layer.yml"
-    - "!training_data.csv"
     - "!deploy.sh"
     - "!Dockerfile"
     - "!gunicorn.conf.py"
