@@ -25,7 +25,7 @@ def lambda_handler(event, context):
                 'statusCode': 200,
                 'headers': {
                     'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Origin': 'https://spotify-mood-player.vercel.app',
                     'Access-Control-Allow-Credentials': 'true',
                     'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent',
                     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
@@ -46,16 +46,7 @@ def lambda_handler(event, context):
         # Use Flask app for all other endpoints
         response = serverless_wsgi.handle_request(app, event, context)
         
-        # Ensure CORS headers are set
-        if 'headers' not in response:
-            response['headers'] = {}
-        response['headers'].update({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent',
-            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
-        })
-        
+        # Flask handles CORS headers via @app.after_request - don't override them
         return response
         
     except Exception as e:
@@ -67,7 +58,7 @@ def lambda_handler(event, context):
             'statusCode': 500,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Origin': 'https://spotify-mood-player.vercel.app',
                 'Access-Control-Allow-Credentials': 'true',
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent',
                 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'

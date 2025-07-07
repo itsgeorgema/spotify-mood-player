@@ -153,16 +153,8 @@ if "https://spotify-mood-player.vercel.app" not in allowed_origins:
 print(f"--- CORS allowed origins: {allowed_origins} ---")
 sys.stdout.flush()
 
-CORS(app, 
-     resources={r"/api/*": {
-         "origins": allowed_origins,
-         "supports_credentials": True,
-         "expose_headers": ["Set-Cookie", "Authorization"],
-         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "cache-control", "Pragma"],
-         "methods": ["GET", "POST", "OPTIONS"]
-     }},
-     supports_credentials=True)
-
+# Flask-CORS disabled - using custom CORS handler in @app.after_request instead
+# to prevent duplicate headers with API Gateway
 
 # --- API Routes ---
 @app.route('/api/login', methods=['GET'])
@@ -219,7 +211,7 @@ def spotify_callback():
         
         # Create response with proper headers
         response = redirect(f"{frontend_url_from_env}/callback?login_success=true")
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        # CORS headers will be added by @app.after_request handler
         
         # Set session cookie explicitly for better cross-origin support
         if IS_PRODUCTION:
@@ -609,10 +601,18 @@ def health_check():
         }), 500
 
 @app.after_request
-def add_cors_headers(response):
-    # Skip adding CORS headers since they're already handled by flask-cors
-    # This prevents duplicate headers that cause browser errors
-    return response
+def add_cors_headers(resp):
+    allowed = "https://spotify-mood-player.vercel.app"
+    origin = request.headers.get("Origin")
+    resp.headers["Access-Control-Allow-Origin"] = origin if origin == allowed else allowed
+    resp.headers["Access-Control-Allow-Credentials"] = "true"
+    resp.headers.setdefault(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-Requested-With, cache-control, Pragma")
+    resp.headers.setdefault(
+        "Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    resp.headers["Vary"] = "Origin"
+    return resp
 
 if __name__ == '__main__':
     # For local development, app.run will use the port from SERVER_NAME or default

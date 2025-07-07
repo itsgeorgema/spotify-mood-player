@@ -67,6 +67,49 @@ custom:
       - matplotlib
       - pandas
 
+functions:
+  app:
+    handler: lambda_function.lambda_handler
+    timeout: 29 # Match API Gateway max timeout
+    memorySize: 1024 # 1GB of memory
+    layers:
+      - ${cf:spotify-mood-player-layer-1751680714-${self:provider.stage}.SpotifyMoodPlayerLayerExport}
+    events:
+      - http:
+          path: /
+          method: ANY
+          cors:
+            origin: 'https://spotify-mood-player.vercel.app'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+              - Access-Control-Allow-Origin
+              - Access-Control-Allow-Credentials
+              - cache-control
+              - Pragma
+            allowCredentials: true
+      - http:
+          path: /{proxy+}
+          method: ANY
+          cors:
+            origin: 'https://spotify-mood-player.vercel.app'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+              - Access-Control-Allow-Origin
+              - Access-Control-Allow-Credentials
+              - cache-control
+              - Pragma
+            allowCredentials: true
+
 package:
   individually: false
   patterns:
@@ -93,37 +136,4 @@ package:
     - "!gunicorn.conf.py"
     - "!postgres-init.sql"
 
-functions:
-  app:
-    handler: lambda_function.lambda_handler
-    timeout: 29 # Match API Gateway max timeout
-    memorySize: 1024 # 1GB of memory
-    layers:
-      - ${cf:spotify-mood-player-layer-1751680714-${self:provider.stage}.SpotifyMoodPlayerLayerExport}
-    events:
-      - http:
-          path: /
-          method: ANY
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - X-Amz-Date
-              - Authorization
-              - X-Api-Key
-              - X-Amz-Security-Token
-              - X-Amz-User-Agent
-            allowCredentials: true
-      - http:
-          path: /{proxy+}
-          method: ANY
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - X-Amz-Date
-              - Authorization
-              - X-Api-Key
-              - X-Amz-Security-Token
-              - X-Amz-User-Agent
-            allowCredentials: true 
+# End of file 
