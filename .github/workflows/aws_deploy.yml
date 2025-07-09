@@ -30,6 +30,10 @@ jobs:
       - name: Install serverless-python-requirements plugin
         run: npm install -g serverless-python-requirements
 
+      # Install serverless-plugin-include-dependencies
+      - name: Install serverless-plugin-include-dependencies
+        run: npm install -g serverless-plugin-include-dependencies
+
       # Configure AWS credentials from GitHub secrets
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
