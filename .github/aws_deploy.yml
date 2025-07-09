@@ -46,11 +46,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements-app.txt
 
-      # Deploy with Serverless Framework
-      - name: Deploy to AWS Lambda
-        run: |
-          cd backend
-          serverless deploy --stage prod --region us-east-2 --conceal --verbose
+      # Deploy with custom deploy script
+      - name: Make deploy script executable
+        run: chmod +x backend/deploy.sh
+
+      - name: Deploy via deploy.sh
+        run: backend/deploy.sh
         env:
           # Pass any additional environment variables required for serverless
           SLS_DEBUG: '*'
