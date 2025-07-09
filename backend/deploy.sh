@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+cd "$(dirname "$0")"
+
 # Set deployment timestamp for unique service names
 export DEPLOY_TIMESTAMP=$(date +%s)
 
