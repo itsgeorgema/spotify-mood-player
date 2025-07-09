@@ -23,8 +23,8 @@ jobs:
           node-version: '20'
 
       # Install Serverless Framework CLI
-      - name: Install Serverless Framework
-        run: npm install -g serverless@latest
+      - name: Install Serverless Framework v3
+        run: npm install -g serverless@3
 
       # Configure AWS credentials from GitHub secrets
       - name: Configure AWS credentials
@@ -56,3 +56,5 @@ jobs:
         env:
           # Pass any additional environment variables required for serverless
           SLS_DEBUG: '*'
+          SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_ACCESS_KEY }}
+          SLS_TELEMETRY_DISABLED: 1
