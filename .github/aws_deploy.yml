@@ -1,0 +1,56 @@
+name: Deploy AWS Lambda
+
+on:
+  push:
+    branches: [ v2-LLM-model ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Set up Node.js for Serverless Framework
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Install Serverless Framework CLI
+      - name: Install Serverless Framework
+        run: npm install -g serverless@latest
+
+      # Configure AWS credentials from GitHub secrets
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      # Set up Python (used by serverless-python-requirements during packaging)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Install project Python dependencies (for local packaging only)
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-app.txt
+
+      # Deploy with Serverless Framework
+      - name: Deploy to AWS Lambda
+        run: |
+          cd backend
+          serverless deploy --stage prod --region us-east-2 --conceal --verbose
+        env:
+          # Pass any additional environment variables required for serverless
+          SLS_DEBUG: '*'
