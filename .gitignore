@@ -59,3 +59,6 @@ backend/tmp/
 # Build artifacts
 build/
 dist/
+
+mood-player-user_accessKeys.csv
+.vercel
