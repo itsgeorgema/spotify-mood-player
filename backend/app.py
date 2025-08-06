@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 import time
 import spotify_service
-from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection, init_database_config, close_db_connection, deduplicate_tracks_for_user
+from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection, init_database_config, close_db_connection, deduplicate_tracks_for_user, delete_all_user_data
 import logging
 import random
 from migrations import run_migrations
@@ -209,6 +209,24 @@ def spotify_callback():
         print(f"--- Session ID: {session.get('session_id', 'No session ID')} ---")
         print(f"--- Session keys: {list(session.keys())} ---")
         
+        # Get user profile and delete existing data on login
+        try:
+            sp_client = spotify_service.get_spotify_client_from_session()
+            if sp_client:
+                user_profile = sp_client.current_user()
+                if user_profile:
+                    spotify_id = user_profile['id']
+                    print(f"--- Deleting existing data for user {spotify_id} on login ---")
+                    delete_all_user_data(spotify_id)
+                    print(f"--- Existing data deleted for user {spotify_id} ---")
+                else:
+                    print("--- Could not get user profile, skipping data deletion ---")
+            else:
+                print("--- Could not get Spotify client, skipping data deletion ---")
+        except Exception as e:
+            print(f"--- Error during data deletion on login: {str(e)} ---")
+            # Continue with login even if deletion fails
+        
         # Create response with proper headers
         response = redirect(f"{frontend_url_from_env}/callback?login_success=true")
         # CORS headers will be added by @app.after_request handler
@@ -281,11 +299,12 @@ def spotify_logout():
                 # Use fresh connection for this operation (serverless pattern)
                 try:
                     user_id = get_or_create_user(spotify_id)
-                    delete_tracks_for_user(user_id)
-                    print(f"--- Deleted tracks for user {user_id} on logout ---")
+                    # Delete all user data from all tables
+                    delete_all_user_data(spotify_id)
+                    print(f"--- Deleted all data for user {spotify_id} on logout ---")
                 except Exception as e:
-                    logger.error(f"Error deleting tracks on logout: {e}")
-                    print(f"--- Error deleting tracks on logout: {e} ---")
+                    logger.error(f"Error deleting user data on logout: {e}")
+                    print(f"--- Error deleting user data on logout: {e} ---")
         except Exception as e:
             logger.error(f"Error in logout operation: {e}")
             print(f"--- Error in logout operation: {e} ---")
@@ -364,6 +383,71 @@ def analyze_library_route():
         sys.stdout.flush()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/auto-analyze', methods=['POST'])
+def auto_analyze_library_route():
+    """Automatically analyze user's library after login (called by frontend)"""
+    print("--- /api/auto-analyze route hit ---")
+    sys.stdout.flush()
+    
+    sp = spotify_service.get_spotify_client_from_session()
+    if not sp:
+        print("--- /api/auto-analyze: User not authenticated ---")
+        sys.stdout.flush()
+        return jsonify({"error": "Not authenticated"}), 401
+
+    try:
+        user_profile = sp.current_user()
+        if not user_profile:
+            return jsonify({"error": "Could not fetch user profile from Spotify."}), 401
+        spotify_id = user_profile['id']
+        
+        # Import analyze_user_library only when needed
+        try:
+            print("--- Starting automatic library analysis after login ---")
+            sys.stdout.flush()
+            analyzed_tracks, mood_uris = analyze_user_library(sp, session)
+            
+            if not analyzed_tracks or not mood_uris:
+                return jsonify({"error": "No tracks could be analyzed"}), 500
+                
+            # Store in database only (no session storage)
+            print(f"--- Storing {len(analyzed_tracks)} tracks in database ---")
+            sys.stdout.flush()
+            db_success = insert_tracks(spotify_id, analyzed_tracks)
+            
+            if db_success:
+                print("--- Automatic analysis complete ---")
+                sys.stdout.flush()
+                return jsonify({
+                    "success": True,
+                    "message": f"Successfully analyzed {len(analyzed_tracks)} tracks",
+                    "tracks_analyzed": len(analyzed_tracks),
+                    "moods": list(mood_uris.keys()) if mood_uris else [],
+                    "database_stored": True,
+                    "auto_analysis": True
+                })
+            else:
+                print("--- Database storage failed ---")
+                sys.stdout.flush()
+                return jsonify({"error": "Failed to store tracks in database"}), 500
+                
+        except ImportError as e:
+            print(f"--- Error importing lyrics_service: {e} ---")
+            sys.stdout.flush()
+            return jsonify({"error": f"Could not load lyrics analysis module: {str(e)}"}), 500
+        except Exception as analysis_error:
+            print(f"--- Error during auto-analysis: {analysis_error} ---")
+            traceback.print_exc()
+            sys.stdout.flush()
+            # Return the specific error for debugging
+            return jsonify({"error": f"Auto-analysis failed: {str(analysis_error)}"}), 500
+            
+    except Exception as e:
+        print(f"--- Error in /api/auto-analyze: {e} ---")
+        traceback.print_exc()
+        sys.stdout.flush()
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/mood-tracks', methods=['GET'])
 def get_mood_tracks_route():
     """Get tracks for a specific mood from the database only"""
@@ -397,12 +481,16 @@ def get_mood_tracks_route():
         tracks = get_tracks_by_mood(user_id, mood)
         
         if tracks and len(tracks) > 0:
+            # Shuffle the tracks to ensure random ordering
+            import random
+            shuffled_tracks = tracks.copy()
+            random.shuffle(shuffled_tracks)
                 
-            print(f"--- Returning {len(tracks)} tracks for mood '{mood}' from database ---")
-            print(f"--- Sample tracks: {tracks[:3] if tracks else 'None'} ---")
+            print(f"--- Returning {len(shuffled_tracks)} tracks for mood '{mood}' from database (shuffled) ---")
+            print(f"--- Sample tracks: {shuffled_tracks[:3] if shuffled_tracks else 'None'} ---")
             sys.stdout.flush()
             # Frontend expects 'track_uris' field, not 'tracks'
-            return jsonify({"track_uris": tracks})
+            return jsonify({"track_uris": shuffled_tracks})
         else:
             print(f"--- No tracks found for mood '{mood}' in database ---")
             sys.stdout.flush()

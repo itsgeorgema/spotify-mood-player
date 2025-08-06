@@ -382,6 +382,42 @@ def delete_tracks_for_user(user_id):
             logger.error(f"Error in delete_tracks_for_user: {str(e)}")
             return False
 
+def delete_all_user_data(spotify_id):
+    """Delete all user data from all tables including user record."""
+    with get_db_cursor() as cursor:
+        if cursor is None:
+            return False
+            
+        try:
+            # Escape single quotes for SQL safety
+            safe_spotify_id = spotify_id.replace("'", "''")
+            
+            # Delete from user_mood_tracks table
+            delete_tracks_sql = f"DELETE FROM user_mood_tracks WHERE user_spotify_id = '{safe_spotify_id}'"
+            cursor.execute(delete_tracks_sql)
+            mood_tracks_deleted = cursor.rowcount
+            
+            # Delete from tracks table (if it exists and has user-specific data)
+            try:
+                delete_tracks_table_sql = f"DELETE FROM tracks WHERE user_spotify_id = '{safe_spotify_id}'"
+                cursor.execute(delete_tracks_table_sql)
+                tracks_table_deleted = cursor.rowcount
+            except Exception as e:
+                # If tracks table doesn't exist or doesn't have user_spotify_id column, ignore
+                logger.info(f"Tracks table deletion skipped: {str(e)}")
+                tracks_table_deleted = 0
+            
+            # Delete from users table
+            delete_user_sql = f"DELETE FROM users WHERE spotify_id = '{safe_spotify_id}'"
+            cursor.execute(delete_user_sql)
+            user_deleted = cursor.rowcount
+            
+            logger.info(f"Deleted {mood_tracks_deleted} mood track records, {tracks_table_deleted} track records, and {user_deleted} user record for spotify_id: {spotify_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error in delete_all_user_data: {str(e)}")
+            return False
+
 def deduplicate_tracks_for_user(user_id):
     """Remove duplicate tracks within each mood for a user."""
     with get_db_cursor() as cursor:
