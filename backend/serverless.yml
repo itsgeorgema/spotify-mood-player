@@ -31,9 +31,7 @@ plugins:
 
 custom:
   pythonRequirements:
-    dockerizePip: true
-    dockerRunArgs: ["--platform", "linux/amd64"]
-    dockerExtraArgs: ["--platform", "linux/amd64"]
+    dockerizePip: false
     useDownloadCache: false
     useStaticCache: false
     pip:
