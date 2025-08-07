@@ -21,7 +21,7 @@
   content: '';
   position: absolute;
   inset: -2px;
-  border-radius: var(--border-radius-xl) !important;
+  border-radius: calc(var(--border-radius-xl) + 2px) !important;
   z-index: 1;
 }
 
@@ -188,21 +188,111 @@
   }
 }
 
+/* iOS Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+  .loading-app-bg {
+    background: -webkit-linear-gradient(135deg, #1DB954 0%, #1ed760 100%);
+    background: linear-gradient(135deg, #1DB954 0%, #1ed760 100%);
+    /* Force hardware acceleration */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+    /* Prevent background issues */
+    -webkit-background-size: 100% 100%;
+    background-size: 100% 100%;
+    /* Fix viewport issues */
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+    /* Handle safe area for devices with notches */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    /* Ensure full viewport coverage */
+    background-attachment: fixed;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    width: 100vw;
+    height: 100vh;
+    min-width: 100vw;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  
+  .loading-center-stack {
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+    /* Prevent horizontal scrolling */
+    overflow-x: hidden;
+    /* Ensure full viewport coverage */
+    width: 100vw;
+    height: 100vh;
+    min-width: 100vw;
+    min-height: 100vh;
+  }
+  
+  .loading-modal-wrapper {
+    width: 90vw;
+    max-width: 90vw;
+  }
+  
+  .loading-modal {
+    /* Ensure proper rendering on iOS */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+    /* Fix background rendering */
+    background: #000 !important;
+    -webkit-background-clip: padding-box;
+    background-clip: padding-box;
+  }
+}
+
+/* Additional iOS fixes for background rendering */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  .loading-app-bg {
+    background: -webkit-linear-gradient(135deg, #1DB954 0%, #1ed760 100%);
+    background: linear-gradient(135deg, #1DB954 0%, #1ed760 100%);
+  }
+}
+
 /* .app should have the green gradient background */
 .loading-app-bg {
   background: linear-gradient(135deg, #1DB954 0%, #1ed760 100%);
   min-height: 100vh;
-  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  width: 100%;
   position: relative;
   overflow: hidden;
   display: block;
+  /* iOS Safari fixes */
+  -webkit-overflow-scrolling: touch;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  /* Ensure full viewport coverage */
+  min-width: 100%;
+  max-width: 100%;
+  background-attachment: fixed;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .loading-center-stack {
   position: relative;
-  width: 100vw;
+  width: 100%;
   height: 100vh;
+  min-height: 100vh;
+  max-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* iOS Safari fixes */
+  -webkit-overflow-scrolling: touch;
+  /* Ensure full coverage */
+  min-width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }

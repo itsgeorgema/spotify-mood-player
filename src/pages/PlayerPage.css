@@ -15,7 +15,7 @@
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: repeat(2, 1fr);
   gap: var(--spacing-md);
-  width: 80vw;
+  width: 80%;
   max-width: 1200px;
   height: 50vh;
   margin: 0 auto var(--spacing-xl) auto;
@@ -78,4 +78,30 @@
 .spotify-button.logout:hover {
   background-color: var(--background-hover);
   color: var(--text-primary);
+}
+
+/* iOS Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+  .mood-grid {
+    width: 80%;
+    min-width: 80%;
+    max-width: 1200px;
+    /* Prevent horizontal scrolling */
+    overflow-x: hidden;
+  }
+  
+  .device-selector {
+    /* Force hardware acceleration */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+  }
+  
+  .device-selector select {
+    /* Ensure proper rendering on iOS */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+    /* Fix appearance on iOS */
+    -webkit-appearance: none;
+    appearance: none;
+  }
 } 

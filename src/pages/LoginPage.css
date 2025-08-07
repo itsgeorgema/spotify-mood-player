@@ -105,8 +105,8 @@
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  width: 100vw;
-  min-width: 100vw;
+  width: 100%;
+  min-width: 100%;
   padding: 0;
   margin: 0;
 }
@@ -193,4 +193,33 @@
   background-color: var(--primary-hover);
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(29, 185, 84, 0.4);
+}
+
+/* iOS Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+  .login-centered {
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+    /* Prevent horizontal scrolling */
+    overflow-x: hidden;
+  }
+  
+  .login-container {
+    /* Force hardware acceleration */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+    /* Fix background rendering */
+    background: rgba(0, 0, 0, 0.8);
+    -webkit-background-clip: padding-box;
+    background-clip: padding-box;
+  }
+  
+  .login-modal .spotify-button {
+    /* Ensure proper rendering on iOS */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+    background: -webkit-linear-gradient(45deg, var(--primary-color), var(--primary-hover));
+    background: linear-gradient(45deg, var(--primary-color), var(--primary-hover));
+  }
 } 
