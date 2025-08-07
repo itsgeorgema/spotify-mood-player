@@ -5,7 +5,9 @@ Select your current mood, and Spotify will play music based on that mood.
 Deployed on Vercel at: https://spotify-mood-player.vercel.app/
 (backend deployed on AWS Lambda)
 
-**IMPORTANT:** This app is in Spotify Developer mode. Only whitelisted users can log in properly.
+**IMPORTANT:** 
+- This app is in Spotify Developer mode. Only whitelisted users can log in properly.
+- In your browser, disable third-party cookie blocking (for Safari, disable ITP)
 
 **UPDATES:** 
 - Migrated hosting service from Fly.io for backend to AWS Lambda
