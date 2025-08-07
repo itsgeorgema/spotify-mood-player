@@ -690,15 +690,15 @@ def health_check():
 
 @app.after_request
 def add_cors_headers(resp):
-    allowed = "https://spotify-mood-player.vercel.app"
+    allowed_origin = "https://spotify-mood-player.vercel.app"
     origin = request.headers.get("Origin")
-    resp.headers["Access-Control-Allow-Origin"] = origin if origin == allowed else allowed
+    if origin == allowed_origin:
+        resp.headers["Access-Control-Allow-Origin"] = origin
+    else:
+        resp.headers["Access-Control-Allow-Origin"] = allowed_origin
     resp.headers["Access-Control-Allow-Credentials"] = "true"
-    resp.headers.setdefault(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-Requested-With, cache-control, Pragma")
-    resp.headers.setdefault(
-        "Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, cache-control, Pragma, Accept, Origin, User-Agent, DNT, Cache-Control, X-Mx-ReqToken, Keep-Alive, X-Requested-With, If-Modified-Since, X-CSRF-Token"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE, PATCH"
     resp.headers["Vary"] = "Origin"
     return resp
 
