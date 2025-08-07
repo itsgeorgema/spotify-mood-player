@@ -262,42 +262,8 @@ def spotify_callback():
 
 @app.route('/api/check_auth', methods=['GET'])
 def check_auth_status():
-    print("--- /api/check_auth route hit ---")
-    print(f"--- Request cookies count: {len(request.cookies)} ---")
-    print(f"--- Session keys: {list(session.keys())} ---")
-    print(f"--- Session ID exists: {'session_id' in session} ---")
-    sys.stdout.flush()
-    
-    token_info = session.get('spotify_token_info')
-    if not token_info:
-        print("--- No token_info in session ---")
-        print(f"--- All session data: {dict(session)} ---")
-        sys.stdout.flush()
-        return jsonify({"isAuthenticated": False}), 200
-
-    print("--- Found token_info in session ---")
-    
-    try:
-        sp_client = spotify_service.get_spotify_client_from_session()
-        if sp_client:
-            # Test the client by making a simple API call
-            user_profile = sp_client.current_user()
-            if user_profile:
-                print(f"--- User is authenticated: {user_profile.get('id', 'Unknown')} ---")
-                sys.stdout.flush()
-                return jsonify({"isAuthenticated": True}), 200
-            else:
-                print("--- Token validation failed: No user profile ---")
-                sys.stdout.flush()
-                return jsonify({"isAuthenticated": False}), 200
-        else:
-            print("--- Token validation failed: No Spotify client ---")
-            sys.stdout.flush()
-            return jsonify({"isAuthenticated": False}), 200
-    except Exception as e:
-        print(f"--- Error during token validation: {str(e)} ---")
-        sys.stdout.flush()
-        return jsonify({"isAuthenticated": False}), 200
+    is_authenticated = 'spotify_token_info' in session
+    return jsonify({ "isAuthenticated": is_authenticated })
 
 @app.route('/api/logout', methods=['POST'])
 def spotify_logout():

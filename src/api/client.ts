@@ -14,7 +14,15 @@ export const apiClient = {
         'Content-Type': 'application/json',
       },
     });
-    return response.json();
+    try {
+      return await response.json();
+    } catch (err) {
+      if (response.status === 401 || response.status === 403) {
+        return { isAuthenticated: false };
+      }
+      // If not JSON and not an auth error, throw
+      throw new Error('Auth check failed: Not valid JSON');
+    }
   },
 
   analyze: async () => {
