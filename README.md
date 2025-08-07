@@ -169,6 +169,7 @@ During development, several significant challenges were encountered and resolved
 
 1. **CORS and Authentication**
    - Struggled to have session cookies transmitted between frontend and backend in production vs. local development, so implemented secure cookie-based token storage and authentication across different domains for CORS
+   - Struggled for CORS to work on different browsers (like safari) that block third-party cookies, so implemented proxy routes through a first-party context to make backend requests appear from vercel's domain
 
 2. **API Restrictions**
    - Worked around Spotify API development mode limitations by restricting users
@@ -199,6 +200,7 @@ This project provided valuable learning opportunities in several areas:
    - Implementing parallel processing
    - Audio analysis and processing
    - Session management and security
+   - Samesite resource sharing for cross-browser compatibility (through a proxy)
 
 3. **DevOps**
    - Setting up CI/CD pipelines

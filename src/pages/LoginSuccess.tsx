@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MusicAnalysisLoading from './MusicAnalysisLoading';
-import { getApiEndpoint } from '../App';
+import { apiClient } from '../api/client';
 
 const LoginSuccess: React.FC<{ checkAuthStatus: () => Promise<void> }> = ({ checkAuthStatus }) => {
   const navigate = useNavigate();
@@ -16,14 +16,9 @@ const LoginSuccess: React.FC<{ checkAuthStatus: () => Promise<void> }> = ({ chec
         setError(null);
         
         // Only trigger analysis once, right after login
-        const response = await fetch(getApiEndpoint('/api/analyze'), {
-          method: 'POST',
-          credentials: 'include'
-        });
+        const data = await apiClient.analyze();
         
-        const data = await response.json();
-        
-        if (!response.ok) {
+        if (data.error) {
           navigate('/failure', { replace: true, state: { error: data.error || 'Failed to analyze your library. Please try again.' } });
           return;
         }

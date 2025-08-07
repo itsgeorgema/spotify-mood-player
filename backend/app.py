@@ -100,10 +100,11 @@ if IS_PRODUCTION and not IS_LAMBDA:
     # If neither env variable is set we simply **do not** set SERVER_NAME – Flask will infer it from the
     # incoming request host and cookies will still work when domain is left unset.
 
+    # Updated for first-party proxy setup
     app.config.update(
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='None',  # For cross-origin requests
+        SESSION_COOKIE_SAMESITE='Lax',   # Changed from 'None' to 'Lax' for first-party context
         SESSION_COOKIE_PATH='/',
         SESSION_COOKIE_DOMAIN=None,      # Let Flask determine domain automatically
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
@@ -123,10 +124,11 @@ elif not IS_LAMBDA: # Local development
     print(f"--- Flask SERVER_NAME (Development): {app.config['SERVER_NAME']} ---")
 else: # Lambda deployment
     # Don't set SERVER_NAME for Lambda, let API Gateway handle it
+    # Updated for first-party proxy setup
     app.config.update(
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='None', # 'None' for cross-origin requests
+        SESSION_COOKIE_SAMESITE='Lax', # Changed from 'None' to 'Lax' for first-party context
         SESSION_COOKIE_PATH='/',
         SESSION_COOKIE_DOMAIN=None,  # Let Flask set this automatically
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
@@ -142,13 +144,25 @@ if 'SESSION_COOKIE_DOMAIN' in app.config and app.config['SESSION_COOKIE_DOMAIN']
     print(f"--- Flask Session Cookie DOMAIN: {app.config.get('SESSION_COOKIE_DOMAIN')} ---")
 sys.stdout.flush()
 
-# CORS CONFIG
+# CORS CONFIG - Updated for first-party proxy setup
 frontend_url_from_env = os.getenv("FRONTEND_URL") or "https://spotify-mood-player.vercel.app"
 # Clean any potential newlines from the URL
 frontend_url_from_env = frontend_url_from_env.strip().replace('\n', '').replace('\r', '')
-allowed_origins = [frontend_url_from_env]
-if "https://spotify-mood-player.vercel.app" not in allowed_origins:
-    allowed_origins.append("https://spotify-mood-player.vercel.app")
+
+# Allow both the frontend domain and Vercel's proxy requests
+allowed_origins = [
+    frontend_url_from_env,
+    "https://spotify-mood-player.vercel.app"
+]
+
+# Add localhost for development
+if not IS_PRODUCTION:
+    allowed_origins.extend([
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000"
+    ])
 
 print(f"--- CORS allowed origins: {allowed_origins} ---")
 sys.stdout.flush()
@@ -690,16 +704,36 @@ def health_check():
 
 @app.after_request
 def add_cors_headers(resp):
-    allowed = "https://spotify-mood-player.vercel.app"
     origin = request.headers.get("Origin")
-    resp.headers["Access-Control-Allow-Origin"] = origin if origin == allowed else allowed
+    user_agent = request.headers.get("User-Agent", "")
+    
+    # Check if this is a Vercel proxy request
+    is_vercel_proxy = "Vercel-Proxy" in user_agent or "vercel" in user_agent.lower()
+    
+    # Check if origin is in our allowed list
+    if origin and origin in allowed_origins:
+        resp.headers["Access-Control-Allow-Origin"] = origin
+    elif is_vercel_proxy:
+        # Allow Vercel proxy requests even without Origin header
+        resp.headers["Access-Control-Allow-Origin"] = frontend_url_from_env
+    else:
+        # Default to the main frontend URL
+        resp.headers["Access-Control-Allow-Origin"] = frontend_url_from_env
+    
     resp.headers["Access-Control-Allow-Credentials"] = "true"
     resp.headers.setdefault(
         "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-Requested-With, cache-control, Pragma")
+        "Content-Type, Authorization, X-Requested-With, Cache-Control, Pragma, User-Agent, Accept")
     resp.headers.setdefault(
-        "Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        "Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
     resp.headers["Vary"] = "Origin"
+    
+    # Add security headers for production
+    if IS_PRODUCTION:
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["X-XSS-Protection"] = "1; mode=block"
+    
     return resp
 
 if __name__ == '__main__':

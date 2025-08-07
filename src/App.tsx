@@ -8,17 +8,10 @@ import Failure from './pages/Failure';
 import { apiClient } from './api/client';
 import './App.css';
 
+// Legacy function - now using API client for all calls
 export const getApiEndpoint = (pathStartingWithApi: string) => {
-  if (import.meta.env.DEV) {
-    // In development, use relative paths for the Vite proxy.
-    return pathStartingWithApi;
-  } else if (import.meta.env.VITE_BACKEND_API_URL.substring(import.meta.env.VITE_BACKEND_API_URL.length-4)=='/api') {
-    // In production, use the full backend URL from environment variables.
-        return `${import.meta.env.VITE_BACKEND_API_URL}${pathStartingWithApi.substring(4)}`;
-  }
-  else{
-    return `${import.meta.env.VITE_BACKEND_API_URL}${pathStartingWithApi}`;
-  }
+  // All API calls now go through Vercel proxy routes
+  return pathStartingWithApi;
 };
 
 // Types
@@ -71,10 +64,7 @@ function App() {
   const checkAuthStatus = useCallback(async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(getApiEndpoint('/api/check_auth'), {
-        credentials: 'include'
-      });
-      const data = await response.json();
+      const data = await apiClient.checkAuth();
       setIsAuthenticated(data.isAuthenticated);
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -86,14 +76,10 @@ function App() {
 
   const fetchDevices = useCallback(async () => {
     try {
-      const response = await (fetch(getApiEndpoint('/api/devices'), {
-        credentials: 'include'
-      }));
-      if (response.ok) {
-        const data = await response.json();
-        if(data.devices){
-          setDevices(data.devices);
-        }}
+      const data = await apiClient.getDevices();
+      if(data.devices){
+        setDevices(data.devices);
+      }
     } catch (error) {
       console.error('Failed to fetch devices:', error);
       setDevices([]);
@@ -118,17 +104,12 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      const response = await fetch(getApiEndpoint('/api/logout'), {
-        method: 'POST',
-        credentials: 'include'
-      });
-      if (response.ok) {
-        setIsAuthenticated(false);
-        setSelectedMood(null);
-        setDevices([]);
-        setSelectedDevice(null);
-        setMessage(null);
-      }
+      await apiClient.logout();
+      setIsAuthenticated(false);
+      setSelectedMood(null);
+      setDevices([]);
+      setSelectedDevice(null);
+      setMessage(null);
     } catch (error) {
       console.error('Logout failed:', error);
     }
@@ -144,24 +125,16 @@ function App() {
 
     try {
         // Only check session data, never reanalyze
-        const moodCheckResponse = await fetch(getApiEndpoint('/api/mood-tracks?mood=' + mood.toLowerCase()), {
-            credentials: 'include',
-            headers: {
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            }
-        });
-
-        const moodData = await moodCheckResponse.json();
+        const moodData = await apiClient.getMoodTracks(mood.toLowerCase());
 
         // Handle case where analysis is not done yet
-        if (moodCheckResponse.status === 400 && moodData.error && moodData.error.includes('No analyzed tracks in session')) {
+        if (moodData.error && moodData.error.includes('No analyzed tracks in session')) {
             setMessage({ type: 'warning', text: 'Your music library is still being analyzed. Please wait a moment and try again.' });
             setSelectedMood(null);
             return;
         }
 
-        if (!moodCheckResponse.ok) {
+        if (moodData.error) {
             throw new Error(moodData.error || 'Failed to check mood data');
         }
 
@@ -176,22 +149,7 @@ function App() {
         setIsLoading(true);
         setMessage({ type: 'warning', text: `Loading ${mood} playlist...` });
 
-        const playResponse = await fetch(getApiEndpoint('/api/play'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-                track_uris: moodData.track_uris,
-                device_id: selectedDevice.id
-            })
-        });
-
-        if (!playResponse.ok) {
-            const errorData = await playResponse.json();
-            throw new Error(errorData.error || 'Failed to play tracks');
-        }
+        await apiClient.playTracks(moodData.track_uris, selectedDevice.id);
 
         setMessage({ type: 'success', text: `Playing ${mood} music...` });
 
