@@ -246,8 +246,10 @@ def spotify_callback():
         traceback.print_exc()
         return redirect(f"{frontend_url_from_env}/?error=auth_failed")
 
-@app.route('/api/check_auth', methods=['GET'])
+@app.route('/api/check_auth', methods=['GET', 'OPTIONS'])
 def check_auth_status():
+    if request.method == 'OPTIONS':
+        return '', 200
     print("--- /api/check_auth route hit ---")
     print(f"--- Request cookies count: {len(request.cookies)} ---")
     print(f"--- Session keys: {list(session.keys())} ---")
@@ -317,8 +319,10 @@ def spotify_logout():
     sys.stdout.flush()
     return jsonify({"message": "Logged out successfully"}), 200
 
-@app.route('/api/analyze', methods=['POST'])
+@app.route('/api/analyze', methods=['POST', 'OPTIONS'])
 def analyze_library_route():
+    if request.method == 'OPTIONS':
+        return '', 200
     """Analyze user's library and store tracks in database only"""
     print("--- /api/analyze route hit ---")
     sys.stdout.flush()
@@ -383,8 +387,10 @@ def analyze_library_route():
         sys.stdout.flush()
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/auto-analyze', methods=['POST'])
+@app.route('/api/auto-analyze', methods=['POST', 'OPTIONS'])
 def auto_analyze_library_route():
+    if request.method == 'OPTIONS':
+        return '', 200
     """Automatically analyze user's library after login (called by frontend)"""
     print("--- /api/auto-analyze route hit ---")
     sys.stdout.flush()
@@ -639,8 +645,10 @@ def queue_tracks_route():
         sys.stdout.flush()
         return jsonify({"error": "Failed to add tracks to queue."}), 500
 
-@app.route('/api/devices', methods=['GET'])
+@app.route('/api/devices', methods=['GET', 'OPTIONS'])
 def get_devices_route():
+    if request.method == 'OPTIONS':
+        return '', 200
     print("--- /api/devices route hit ---")
     sys.stdout.flush()
     sp = spotify_service.get_spotify_client_from_session()
@@ -655,8 +663,10 @@ def get_devices_route():
     return jsonify({"devices": devices}), 200
 
 
-@app.route('/api/health', methods=['GET'])
+@app.route('/api/health', methods=['GET', 'OPTIONS'])
 def health_check():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         # Check database connection - get a fresh connection for serverless
         db_status = "unknown"
@@ -690,16 +700,24 @@ def health_check():
 
 @app.after_request
 def add_cors_headers(resp):
-    allowed_origin = "https://spotify-mood-player.vercel.app"
+    # Get the origin from the request
     origin = request.headers.get("Origin")
-    if origin == allowed_origin:
+    
+    # Always set CORS headers regardless of origin
+    if origin:
         resp.headers["Access-Control-Allow-Origin"] = origin
     else:
-        resp.headers["Access-Control-Allow-Origin"] = allowed_origin
+        # Fallback for requests without origin header
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+    
     resp.headers["Access-Control-Allow-Credentials"] = "true"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, cache-control, Pragma, Accept, Origin, User-Agent, DNT, Cache-Control, X-Mx-ReqToken, Keep-Alive, X-Requested-With, If-Modified-Since, X-CSRF-Token"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, cache-control, Pragma, X-Amz-Date, X-Api-Key, X-Amz-Security-Token, X-Amz-User-Agent, Accept, Origin, User-Agent, DNT, Cache-Control, X-Mx-ReqToken, Keep-Alive, If-Modified-Since, X-CSRF-Token"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE, PATCH"
     resp.headers["Vary"] = "Origin"
+    
+    print(f"--- CORS: Origin={origin}, Set={resp.headers.get('Access-Control-Allow-Origin')} ---")
+    sys.stdout.flush()
+    
     return resp
 
 if __name__ == '__main__':
