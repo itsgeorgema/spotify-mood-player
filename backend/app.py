@@ -700,24 +700,12 @@ def health_check():
 
 @app.after_request
 def add_cors_headers(resp):
-    # Get the origin from the request
     origin = request.headers.get("Origin")
-    
-    # Always set CORS headers regardless of origin
-    if origin:
+    if origin == "https://spotify-mood-player.vercel.app":
         resp.headers["Access-Control-Allow-Origin"] = origin
-    else:
-        # Fallback for requests without origin header
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-    
-    resp.headers["Access-Control-Allow-Credentials"] = "true"
+        resp.headers["Access-Control-Allow-Credentials"] = "true"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, cache-control, Pragma, X-Amz-Date, X-Api-Key, X-Amz-Security-Token, X-Amz-User-Agent, Accept, Origin, User-Agent, DNT, Cache-Control, X-Mx-ReqToken, Keep-Alive, If-Modified-Since, X-CSRF-Token"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE, PATCH"
-    resp.headers["Vary"] = "Origin"
-    
-    print(f"--- CORS: Origin={origin}, Set={resp.headers.get('Access-Control-Allow-Origin')} ---")
-    sys.stdout.flush()
-    
     return resp
 
 if __name__ == '__main__':
