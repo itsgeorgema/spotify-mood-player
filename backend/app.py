@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 import time
 import spotify_service
-from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection, init_database_config, close_db_connection, deduplicate_tracks_for_user, delete_all_user_data
+from db import get_or_create_user, insert_tracks, get_tracks_by_mood, delete_tracks_for_user, get_db_connection, init_database_config, close_db_connection, deduplicate_tracks_for_user, delete_all_user_data, user_has_categorized_songs
 import logging
 import random
 from migrations import run_migrations
@@ -261,7 +261,7 @@ def check_auth_status():
         print("--- No token_info in session ---")
         print(f"--- All session data: {dict(session)} ---")
         sys.stdout.flush()
-        return jsonify({"isAuthenticated": False}), 200
+        return jsonify({"isAuthenticated": False, "hasCategorizedSongs": False}), 200
 
     print("--- Found token_info in session ---")
     
@@ -271,21 +271,30 @@ def check_auth_status():
             # Test the client by making a simple API call
             user_profile = sp_client.current_user()
             if user_profile:
-                print(f"--- User is authenticated: {user_profile.get('id', 'Unknown')} ---")
+                user_id = user_profile.get('id', 'Unknown')
+                print(f"--- User is authenticated: {user_id} ---")
+                
+                # Check if user has categorized songs
+                has_categorized = user_has_categorized_songs(user_id)
+                print(f"--- User has categorized songs: {has_categorized} ---")
                 sys.stdout.flush()
-                return jsonify({"isAuthenticated": True}), 200
+                
+                return jsonify({
+                    "isAuthenticated": True,
+                    "hasCategorizedSongs": has_categorized
+                }), 200
             else:
                 print("--- Token validation failed: No user profile ---")
                 sys.stdout.flush()
-                return jsonify({"isAuthenticated": False}), 200
+                return jsonify({"isAuthenticated": False, "hasCategorizedSongs": False}), 200
         else:
             print("--- Token validation failed: No Spotify client ---")
             sys.stdout.flush()
-            return jsonify({"isAuthenticated": False}), 200
+            return jsonify({"isAuthenticated": False, "hasCategorizedSongs": False}), 200
     except Exception as e:
         print(f"--- Error during token validation: {str(e)} ---")
         sys.stdout.flush()
-        return jsonify({"isAuthenticated": False}), 200
+        return jsonify({"isAuthenticated": False, "hasCategorizedSongs": False}), 200
 
 @app.route('/api/logout', methods=['POST'])
 def spotify_logout():

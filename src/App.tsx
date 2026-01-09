@@ -62,6 +62,7 @@ interface MessageProps {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [hasCategorizedSongs, setHasCategorizedSongs] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedMood, setSelectedMood] = useState<string | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
@@ -76,9 +77,13 @@ function App() {
       });
       const data = await response.json();
       setIsAuthenticated(data.isAuthenticated);
+      setHasCategorizedSongs(data.hasCategorizedSongs || false);
+      return data; // Return the data so components can use it immediately
     } catch (error) {
       console.error('Auth check failed:', error);
       setIsAuthenticated(false);
+      setHasCategorizedSongs(false);
+      return { isAuthenticated: false, hasCategorizedSongs: false };
     } finally {
       setIsLoading(false);
     }
@@ -227,25 +232,10 @@ function App() {
           <Route path="/failure" element={<Failure handleLogout={handleLogout} />} />
           <Route path="/player" 
             element={
-              <PlayerPage
-                isAuthenticated={isAuthenticated}
-                isLoading={isLoading}
-                selectedMood={selectedMood}
-                message={message?.text || ''}
-                devices={devices}
-                selectedDeviceId={selectedDevice?.id || ''}
-                setSelectedDeviceId={(id: string) => setSelectedDevice(devices.find(d => d.id === id) || null)}
-                handleLogout={handleLogout}
-                handleMoodSelect={handleMoodSelect}
-              />
-            } 
-          />
-          <Route path="/" 
-            element={
               isAuthenticated ? (
                 <PlayerPage
                   isAuthenticated={isAuthenticated}
-                  isLoading={isLoading}
+                  isLoading={false}
                   selectedMood={selectedMood}
                   message={message?.text || ''}
                   devices={devices}
@@ -255,15 +245,49 @@ function App() {
                   handleMoodSelect={handleMoodSelect}
                 />
               ) : (
+                <Navigate to="/" replace />
+              )
+            } 
+          />
+          <Route path="/" 
+            element={
+              isLoading ? (
+                // During initial auth check, show nothing (or a minimal loader) to avoid flashing
+                <div className="app" />
+              ) : isAuthenticated ? (
+                hasCategorizedSongs ? (
+                  <PlayerPage
+                    isAuthenticated={isAuthenticated}
+                    isLoading={false}
+                    selectedMood={selectedMood}
+                    message={message?.text || ''}
+                    devices={devices}
+                    selectedDeviceId={selectedDevice?.id || ''}
+                    setSelectedDeviceId={(id: string) => setSelectedDevice(devices.find(d => d.id === id) || null)}
+                    handleLogout={handleLogout}
+                    handleMoodSelect={handleMoodSelect}
+                  />
+                ) : (
+                  <Navigate to="/analyzing" replace />
+                )
+              ) : (
                 <LoginPage
                   isAuthenticated={isAuthenticated}
                   handleLogin={handleLogin}
-                  isLoading={isLoading}
+                  isLoading={false}
                 />
               )
             }
           />
-          <Route path="/analyzing" element={<MusicAnalysisLoading />} />
+          <Route path="/analyzing" 
+            element={
+              isAuthenticated ? (
+                <MusicAnalysisLoading />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            } 
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

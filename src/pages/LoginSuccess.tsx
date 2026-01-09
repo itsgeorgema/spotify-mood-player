@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import MusicAnalysisLoading from './MusicAnalysisLoading';
 import { getApiEndpoint } from '../App';
 
-const LoginSuccess: React.FC<{ checkAuthStatus: () => Promise<void> }> = ({ checkAuthStatus }) => {
+const LoginSuccess: React.FC<{ 
+  checkAuthStatus: () => Promise<{ isAuthenticated: boolean; hasCategorizedSongs: boolean }>;
+}> = ({ checkAuthStatus }) => {
   const navigate = useNavigate();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -11,7 +13,18 @@ const LoginSuccess: React.FC<{ checkAuthStatus: () => Promise<void> }> = ({ chec
   useEffect(() => {
     const handleLoginSuccess = async () => {
       try {
-        await checkAuthStatus();
+        // Check authentication status first and get the result immediately
+        const authData = await checkAuthStatus();
+        
+        // If user already has categorized songs, go directly to player
+        if (authData.hasCategorizedSongs) {
+          console.log('User has categorized songs, redirecting to player');
+          navigate('/player', { replace: true });
+          return;
+        }
+        
+        // User doesn't have categorized songs, start analysis
+        console.log('User needs analysis, starting...');
         setIsAnalyzing(true);
         setError(null);
         

@@ -585,6 +585,40 @@ def insert_tracks(user_id, tracks):
         logger.error(f"Error in insert_tracks: {str(e)}")
         return False
 
+def user_has_categorized_songs(user_id):
+    """Check if a user has any categorized songs in the database."""
+    with get_db_cursor() as cursor:
+        if cursor is None:
+            logger.error("Could not get database cursor in user_has_categorized_songs")
+            return False
+            
+        try:
+            # Escape single quotes for SQL safety
+            safe_user_id = user_id.replace("'", "''")
+            
+            # Check if user has any records with tracks
+            query = f"""
+                SELECT COUNT(*) as count FROM user_mood_tracks 
+                WHERE user_spotify_id = '{safe_user_id}' 
+                AND track_uris IS NOT NULL 
+                AND array_length(track_uris, 1) > 0
+            """
+            
+            cursor.execute(query)
+            result = cursor.fetchone()
+            
+            if result and result['count'] > 0:
+                logger.info(f"User {user_id} has {result['count']} categorized mood records")
+                return True
+            else:
+                logger.info(f"User {user_id} has no categorized songs")
+                return False
+        except Exception as e:
+            logger.error(f"Error in user_has_categorized_songs: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return False
+
 def wait_for_db(max_retries=30, retry_interval=2):
     """Wait for database to be ready with retries."""
     retries = 0

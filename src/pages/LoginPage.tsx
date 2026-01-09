@@ -47,10 +47,9 @@ function LoginPage({ isAuthenticated, handleLogin, isLoading }: LoginPageProps) 
     }
   }, [isLoading, isAuthenticated, location, navigate]);
 
-  if (isLoading) {
-    return <MusicAnalysisLoading />;
-  }
-
+  // Don't show loading screen during initial auth check - let the page render immediately
+  // Only show loading if this is a special case (like after callback)
+  
   if (isAuthenticated) {
     return <Navigate to="/player" replace />;
   }
