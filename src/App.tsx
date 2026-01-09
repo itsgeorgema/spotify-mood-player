@@ -72,9 +72,18 @@ function App() {
   const checkAuthStatus = useCallback(async () => {
     try {
       setIsLoading(true);
+      
+      // Add timeout to handle cold starts gracefully
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
       const response = await fetch(getApiEndpoint('/api/check_auth'), {
-        credentials: 'include'
+        credentials: 'include',
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
+      
       const data = await response.json();
       setIsAuthenticated(data.isAuthenticated);
       setHasCategorizedSongs(data.hasCategorizedSongs || false);
@@ -252,8 +261,10 @@ function App() {
           <Route path="/" 
             element={
               isLoading ? (
-                // During initial auth check, show nothing (or a minimal loader) to avoid flashing
-                <div className="app" />
+                // Show minimal loading spinner during initial auth check
+                <div className="auth-loading-container">
+                  <div className="minimal-spinner"></div>
+                </div>
               ) : isAuthenticated ? (
                 hasCategorizedSongs ? (
                   <PlayerPage
